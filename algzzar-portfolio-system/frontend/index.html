@@ -6,6 +6,16 @@
   <title>Ahmed Algzzar — Visual Director</title>
   <meta name="description" content="Graphic Designer & Video Editor crafting cinematic visual experiences" />
 
+  <!-- SEO -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Ahmed Algzzar — Visual Director" />
+  <meta property="og:description" content="Graphic Designer & Video Editor crafting cinematic visual experiences" />
+  <meta name="theme-color" content="#0a0a08" />
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Environment Config (must be first) -->
+  <script src="js/env-config.js"></script>
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
@@ -1229,39 +1239,74 @@
 </div>
 
 <script type="module">
-// ── API Configuration ─────────────────────────────────────────
-const API = window.ALGZZAR_API_URL || 'http://localhost:5000/api';
+// ── API Config ─────────────────────────────────────────────────────────────────
+// env-config.js sets window.ALGZZAR_API_URL before this runs
+const API = window.ALGZZAR_API_URL || 'https://automatic-journey-x5qqvg699x5q3pv75-5000.app.github.dev/api';
 
+// ── Utilities ──────────────────────────────────────────────────────────────────
 async function apiFetch(endpoint, opts = {}) {
-  const res = await fetch(`${API}${endpoint}`, opts);
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const res = await fetch(`${API}${endpoint}`, { credentials: 'include', ...opts });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
-// ── Custom Cursor ─────────────────────────────────────────────
+// Normalize nested backend response shapes
+const norm = {
+  about:      (r) => r?.data?.about      ?? r?.data ?? null,
+  skills:     (r) => r?.data?.skills     ?? r?.data ?? [],
+  experience: (r) => r?.data?.experience ?? r?.data ?? [],
+  stats:      (r) => r?.data?.stats      ?? r?.data ?? {},
+  projects:   (r) => r?.data?.projects   ?? r?.data ?? [],
+  categories: (r) => r?.data             ?? [],
+};
+
+// ── Custom Cursor ──────────────────────────────────────────────────────────────
 const cursor = document.getElementById('cursor');
 const cursorRing = document.getElementById('cursorRing');
-let mx = 0, my = 0, rx = 0, ry = 0;
-document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
-function animCursor() {
-  cursor.style.left = mx - 4 + 'px';
-  cursor.style.top  = my - 4 + 'px';
-  rx += (mx - rx) * 0.12;
-  ry += (my - ry) * 0.12;
-  cursorRing.style.left = rx - 18 + 'px';
-  cursorRing.style.top  = ry - 18 + 'px';
-  requestAnimationFrame(animCursor);
+if (cursor && cursorRing) {
+  let mx = 0, my = 0, rx = 0, ry = 0;
+  document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+  (function animCursor() {
+    cursor.style.left = mx - 4 + 'px';
+    cursor.style.top  = my - 4 + 'px';
+    rx += (mx - rx) * 0.12;
+    ry += (my - ry) * 0.12;
+    cursorRing.style.left = rx - 18 + 'px';
+    cursorRing.style.top  = ry - 18 + 'px';
+    requestAnimationFrame(animCursor);
+  })();
+  document.querySelectorAll('a,button,[data-id]').forEach(el => {
+    el.addEventListener('mouseenter', () => cursorRing.style.transform = 'scale(1.6)');
+    el.addEventListener('mouseleave', () => cursorRing.style.transform = 'scale(1)');
+  });
 }
-animCursor();
 
-// ── Nav Scroll ────────────────────────────────────────────────
+// ── Nav Scroll ─────────────────────────────────────────────────────────────────
 const nav = document.getElementById('nav');
-window.addEventListener('scroll', () => {
-  nav.classList.toggle('scrolled', window.scrollY > 80);
-});
+if (nav) {
+  window.addEventListener('scroll', () => nav.classList.toggle('scrolled', window.scrollY > 80), { passive: true });
+}
 
-// ── Counter Animation ─────────────────────────────────────────
+// ── Intersection Observers ─────────────────────────────────────────────────────
+const revealObs = new IntersectionObserver(entries => {
+  entries.forEach(e => e.isIntersecting && e.target.classList.add('visible'));
+}, { threshold: 0.15 });
+
+const skillObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const fill = e.target.querySelector('.skill-bar-fill');
+      if (fill) setTimeout(() => fill.style.width = fill.dataset.pct + '%', 120);
+    }
+  });
+}, { threshold: 0.3 });
+
+// ── Counter Animation ──────────────────────────────────────────────────────────
 function animateCount(el, target, suffix = '') {
+  if (!el || !target) return;
   let start = 0;
   const step = target / 60;
   const timer = setInterval(() => {
@@ -1271,119 +1316,168 @@ function animateCount(el, target, suffix = '') {
   }, 25);
 }
 
-// ── Intersection Observer for Timeline ───────────────────────
-const revealObs = new IntersectionObserver(entries => {
-  entries.forEach(e => e.isIntersecting && e.target.classList.add('visible'));
-}, { threshold: 0.2 });
-
-// ── Skill Bar Animation ───────────────────────────────────────
-const skillObs = new IntersectionObserver(entries => {
-  entries.forEach(e => {
-    if (e.isIntersecting) {
-      const fill = e.target.querySelector('.skill-bar-fill');
-      if (fill) {
-        const pct = fill.dataset.pct;
-        setTimeout(() => fill.style.width = pct + '%', 100);
-      }
-    }
-  });
-}, { threshold: 0.3 });
-
-// ── Load Stats ────────────────────────────────────────────────
-async function loadStats() {
-  try {
-    const { data } = await apiFetch('/portfolio/stats');
-    const yearsEl = document.getElementById('statYears');
-    const projEl  = document.getElementById('statProjects');
-    if (data.yearsExperience) animateCount(yearsEl, data.yearsExperience, '+');
-    if (data.projectsCount)   animateCount(projEl,  data.projectsCount,  '+');
-  } catch {}
+// ── Skeleton Loader ────────────────────────────────────────────────────────────
+function showSkeleton(containerId, count = 3, type = 'card') {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const skeletonCard = type === 'card'
+    ? `<div style="background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.07);border-radius:2px;padding:1.5rem;animation:pulse 1.5s ease-in-out infinite;grid-column:span 4"><div style="height:160px;background:rgba(201,168,76,.06);margin-bottom:1rem"></div><div style="height:12px;background:rgba(201,168,76,.06);margin-bottom:.5rem;width:60%"></div><div style="height:8px;background:rgba(201,168,76,.04);width:80%"></div></div>`
+    : `<div style="background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.07);border-radius:2px;padding:1.5rem;animation:pulse 1.5s ease-in-out infinite"><div style="height:60px;background:rgba(201,168,76,.06);margin-bottom:1rem;border-radius:50%;width:60px"></div><div style="height:12px;background:rgba(201,168,76,.06);margin-bottom:.5rem"></div><div style="height:8px;background:rgba(201,168,76,.04);width:70%"></div></div>`;
+  el.innerHTML = Array(count).fill(skeletonCard).join('');
 }
 
-// ── Load About ────────────────────────────────────────────────
+// ── Load About ─────────────────────────────────────────────────────────────────
 async function loadAbout() {
   try {
-    const { data } = await apiFetch('/portfolio/about');
+    const raw = await apiFetch('/portfolio/about');
+    const data = norm.about(raw);
     if (!data) return;
 
-    // Hero dynamic update
-    document.getElementById('heroTitle').innerHTML = 
-      data.title?.includes('&') 
-        ? data.title.replace('&', '&<br><em>').replace(/Director|Editor|Designer/, '$&</em>')
+    // Hero
+    const heroTitle = document.getElementById('heroTitle');
+    if (heroTitle && data.title) {
+      heroTitle.innerHTML = data.title.includes('&')
+        ? data.title.replace('&', '&<br><em>').replace(/(Director|Editor|Designer)/, '$1</em>')
         : `Visual<br><em>Director</em>`;
-    document.getElementById('heroSubtitle').textContent = data.tagline || data.bioShort || document.getElementById('heroSubtitle').textContent;
-
-    // About section
-    document.getElementById('aboutBio').innerHTML = data.bioShort 
-      ? data.bioShort.replace(/(\w+\s+\w+)$/, '<em>$1</em>') 
-      : document.getElementById('aboutBio').innerHTML;
-    document.getElementById('aboutText').textContent = data.bio || '';
-
-    document.getElementById('detailLocation').textContent = data.location || '—';
-    document.getElementById('detailAvail').textContent = data.availableForWork ? '✓ Open to work' : 'Currently busy';
-    document.getElementById('detailSpec').textContent = data.specialization || '—';
-    document.getElementById('detailStyle').textContent = data.style || '—';
-    document.getElementById('contactEmail').textContent = data.email || '—';
-    document.getElementById('contactLocation').textContent = data.location || '—';
-
-    if (data.avatar?.url) {
-      const frame = document.getElementById('aboutImageFrame');
-      frame.innerHTML = `<img src="${data.avatar.url}" alt="${data.name}" loading="lazy" />`;
+    }
+    const heroSub = document.getElementById('heroSubtitle');
+    if (heroSub && (data.tagline || data.bioShort)) {
+      heroSub.textContent = data.tagline || data.bioShort;
     }
 
+    // About section
+    const aboutBio = document.getElementById('aboutBio');
+    if (aboutBio && data.bioShort) {
+      aboutBio.innerHTML = data.bioShort.replace(/(\w[\w\s]+)$/, '<em>$1</em>');
+    }
+    const aboutText = document.getElementById('aboutText');
+    if (aboutText && data.bio) aboutText.textContent = data.bio;
+
+    // Details
+    const detailMap = {
+      detailLocation: data.location,
+      detailAvail:    data.availableForWork ? '✓ Open to work' : 'Currently busy',
+      detailSpec:     data.specialization,
+      detailStyle:    data.style,
+      contactEmail:   data.email,
+      contactLocation:data.location,
+    };
+    Object.entries(detailMap).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el && val) el.textContent = val;
+    });
+
+    // Avatar
+    if (data.avatar?.url) {
+      const frame = document.getElementById('aboutImageFrame');
+      if (frame) {
+        frame.innerHTML = `<img src="${data.avatar.url}" alt="${data.name || 'About'}" loading="lazy" style="width:100%;height:100%;object-fit:cover" />`;
+      }
+    }
+
+    // Resume
     if (data.resume) {
       const link = document.getElementById('resumeLink');
-      link.href = data.resume;
-      link.style.display = 'flex';
-      link.setAttribute('download', '');
+      if (link) { link.href = data.resume; link.style.display = 'flex'; link.setAttribute('download', ''); }
     }
 
     // Social Links
     if (data.socialLinks?.length) {
-      const socialIcons = { instagram: '📷', behance: '🎨', linkedin: '💼', youtube: '▶', twitter: '🐦', github: '🐙' };
+      const icons = { instagram:'📷', behance:'🎨', linkedin:'💼', youtube:'▶', twitter:'🐦', github:'🐙', dribbble:'🏀', vimeo:'🎬', x:'🐦' };
       const container = document.getElementById('socialLinks');
-      container.innerHTML = data.socialLinks
-        .sort((a,b) => a.order - b.order)
-        .map(s => `<a href="${s.url}" class="social-link" target="_blank" rel="noopener" title="${s.label || s.platform}">${socialIcons[s.platform?.toLowerCase()] || '🔗'}</a>`)
-        .join('');
+      if (container) {
+        container.innerHTML = [...data.socialLinks]
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .map(s => `<a href="${s.url}" class="social-link" target="_blank" rel="noopener noreferrer" title="${s.label || s.platform || 'Social'}">${icons[s.platform?.toLowerCase()] || '🔗'}</a>`)
+          .join('');
+      }
     }
 
-    document.title = `${data.name} — ${data.title}`;
+    // Page title + SEO
+    if (data.name && data.title) {
+      document.title = `${data.name} — ${data.title}`;
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) ogTitle.content = document.title;
+    }
   } catch (e) {
-    console.warn('About fetch:', e.message);
+    console.warn('[About]', e.message);
   }
 }
 
-// ── Load Projects ─────────────────────────────────────────────
-let currentFilter = 'all';
+// ── Load Stats ─────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const raw = await apiFetch('/portfolio/stats');
+    const data = norm.stats(raw);
+    const yearsEl   = document.getElementById('statYears');
+    const projEl    = document.getElementById('statProjects');
+    const skillsEl  = document.getElementById('statSkills');
+    if (data.yearsExperience) animateCount(yearsEl, data.yearsExperience, '+');
+    if (data.projects)        animateCount(projEl,  data.projects, '+');
+    if (data.skills)          animateCount(skillsEl,data.skills, '+');
+  } catch (e) {
+    console.warn('[Stats]', e.message);
+  }
+}
+
+// ── Load Categories ────────────────────────────────────────────────────────────
 let allProjects = [];
+let currentFilter = 'all';
+
+async function loadCategories() {
+  try {
+    const raw = await apiFetch('/categories');
+    const cats = norm.categories(raw);
+    const bar = document.getElementById('filterBar');
+    if (!bar) return;
+    bar.innerHTML = `<button class="filter-btn active" data-filter="all">All</button>` +
+      cats.map(c => `<button class="filter-btn" data-filter="${c._id}">${c.icon || ''} ${c.name}</button>`).join('');
+
+    bar.addEventListener('click', e => {
+      const btn = e.target.closest('.filter-btn');
+      if (!btn) return;
+      bar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilter = btn.dataset.filter;
+      const filtered = currentFilter === 'all'
+        ? allProjects
+        : allProjects.filter(p => p.category?._id === currentFilter || p.category === currentFilter);
+      renderProjects(filtered);
+    });
+  } catch {}
+}
+
+// ── Render Projects ────────────────────────────────────────────────────────────
+function getCategoryIcon(name) {
+  const icons = { Branding:'✦', Video:'▶', Print:'📐', Social:'📱', Motion:'🎬', UI:'⬡', Photography:'📷', Illustration:'🖌' };
+  return icons[name] || '◆';
+}
 
 function renderProjects(projects) {
   const grid = document.getElementById('projectsGrid');
-  if (!projects.length) {
+  if (!grid) return;
+  if (!projects?.length) {
     grid.innerHTML = '<p style="color:var(--silver);font-family:var(--mono);font-size:.75rem;letter-spacing:.1em;grid-column:span 12;text-align:center;padding:3rem 0">No projects found</p>';
     return;
   }
-
+  const sizes = ['large', 'small', 'small', 'large', 'half', 'half'];
   grid.innerHTML = projects.map((p, i) => {
-    const sizes = ['large', 'small', 'small', 'large', 'half', 'half'];
     const sizeClass = p.isLarge ? 'large' : sizes[i % sizes.length];
-    const img = p.coverImage?.url 
+    const img = p.coverImage?.url
       ? `<img src="${p.coverImage.url}" alt="${p.title}" loading="lazy" />`
       : `<div class="card-placeholder"><span class="card-placeholder-icon">${getCategoryIcon(p.category?.name)}</span></div>`;
     const tags = (p.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
     const links = [
-      p.liveUrl     ? `<a href="${p.liveUrl}" class="card-link" target="_blank" title="Live">↗</a>` : '',
-      p.behanceUrl  ? `<a href="${p.behanceUrl}" class="card-link" target="_blank" title="Behance">🎨</a>` : '',
+      p.liveUrl    ? `<a href="${p.liveUrl}"    class="card-link" target="_blank" rel="noopener" title="Live">↗</a>` : '',
+      p.behanceUrl ? `<a href="${p.behanceUrl}" class="card-link" target="_blank" rel="noopener" title="Behance">🎨</a>` : '',
     ].join('');
-
     return `
     <article class="project-card ${sizeClass}" data-id="${p._id}" onclick="openProjectModal('${p._id}')">
       <div class="card-image">${img}<div class="card-overlay"></div></div>
       <div class="card-body">
         <div class="card-category">${p.category?.name || 'Project'}</div>
         <h3 class="card-title">${p.title}</h3>
-        <p class="card-desc">${p.shortDescription || p.description || ''}</p>
+        <p class="card-desc">${p.shortDescription || p.description?.slice(0, 120) || ''}</p>
         <div class="card-tags">${tags}</div>
       </div>
       <div class="card-actions">${links}</div>
@@ -1391,51 +1485,26 @@ function renderProjects(projects) {
   }).join('');
 }
 
-function getCategoryIcon(name) {
-  const icons = { 'Branding': '✦', 'Video': '▶', 'Print': '📐', 'Social': '📱', 'Motion': '🎬', 'UI': '⬡' };
-  return icons[name] || '◆';
-}
-
+// ── Load Projects ──────────────────────────────────────────────────────────────
 async function loadProjects() {
+  showSkeleton('projectsGrid', 6, 'card');
   try {
-    const { data } = await apiFetch('/portfolio/projects');
-    allProjects = data || [];
+    const raw = await apiFetch('/portfolio/projects');
+    allProjects = norm.projects(raw);
     renderProjects(allProjects);
   } catch (e) {
-    console.warn('Projects fetch:', e.message);
-    document.getElementById('projectsGrid').innerHTML = 
-      '<p style="color:var(--silver);grid-column:span 12;text-align:center;padding:3rem 0;font-family:var(--mono);font-size:.75rem">Connect your backend to display projects</p>';
+    console.warn('[Projects]', e.message);
+    const grid = document.getElementById('projectsGrid');
+    if (grid) grid.innerHTML = '<p style="color:var(--silver);grid-column:span 12;text-align:center;padding:3rem 0;font-family:var(--mono);font-size:.75rem;letter-spacing:.1em">Projects loading from backend — check console for details</p>';
   }
 }
 
-async function loadCategories() {
-  try {
-    const { data } = await apiFetch('/categories');
-    const bar = document.getElementById('filterBar');
-    const btns = (data || []).map(c => 
-      `<button class="filter-btn" data-filter="${c._id}">${c.name}</button>`
-    ).join('');
-    bar.innerHTML = `<button class="filter-btn active" data-filter="all">All</button>${btns}`;
-    
-    bar.addEventListener('click', e => {
-      const btn = e.target.closest('.filter-btn');
-      if (!btn) return;
-      bar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentFilter = btn.dataset.filter;
-      const filtered = currentFilter === 'all' 
-        ? allProjects 
-        : allProjects.filter(p => p.category?._id === currentFilter || p.category?.name === currentFilter);
-      renderProjects(filtered);
-    });
-  } catch {}
-}
-
-// ── Project Modal ─────────────────────────────────────────────
-let projectsCache = {};
+// ── Project Modal ──────────────────────────────────────────────────────────────
+const projectsCache = {};
 
 window.openProjectModal = async function(id) {
   const overlay = document.getElementById('modalOverlay');
+  if (!overlay) return;
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
 
@@ -1445,13 +1514,11 @@ window.openProjectModal = async function(id) {
 
   document.getElementById('modalCategory').textContent = project.category?.name || '';
   document.getElementById('modalTitle').textContent = project.title;
-  
+
   const img = document.getElementById('modalImage');
-  if (project.coverImage?.url) {
-    img.src = project.coverImage.url;
-    img.style.display = 'block';
-  } else {
-    img.style.display = 'none';
+  if (img) {
+    if (project.coverImage?.url) { img.src = project.coverImage.url; img.style.display = 'block'; }
+    else img.style.display = 'none';
   }
 
   document.getElementById('modalMeta').innerHTML = [
@@ -1462,57 +1529,73 @@ window.openProjectModal = async function(id) {
 
   document.getElementById('modalDesc').textContent = project.description || '';
   document.getElementById('modalLinks').innerHTML = [
-    project.liveUrl    && `<a href="${project.liveUrl}" class="btn-primary" target="_blank"><span>Live Project ↗</span></a>`,
-    project.behanceUrl && `<a href="${project.behanceUrl}" class="btn-outline" target="_blank">View on Behance</a>`,
+    project.liveUrl    && `<a href="${project.liveUrl}"    class="btn-primary" target="_blank" rel="noopener"><span>Live Project ↗</span></a>`,
+    project.behanceUrl && `<a href="${project.behanceUrl}" class="btn-outline" target="_blank" rel="noopener">Behance</a>`,
   ].filter(Boolean).join('');
+
+  // Additional images gallery
+  if (project.images?.length > 1) {
+    const existing = document.getElementById('modalGallery');
+    const galleryHtml = `<div id="modalGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem;margin-top:1rem">${project.images.slice(1).map(img => `<img src="${img.url}" alt="${img.caption||''}" style="width:100%;aspect-ratio:1;object-fit:cover;cursor:zoom-in" onclick="window.open('${img.url}','_blank')" />`).join('')}</div>`;
+    if (!existing) {
+      document.getElementById('modalDesc').insertAdjacentHTML('afterend', galleryHtml);
+    } else {
+      existing.outerHTML = galleryHtml;
+    }
+  }
 };
 
-document.getElementById('modalClose').addEventListener('click', () => {
-  document.getElementById('modalOverlay').classList.remove('open');
-  document.body.style.overflow = '';
+const modalClose = document.getElementById('modalClose');
+if (modalClose) modalClose.addEventListener('click', () => {
+  const o = document.getElementById('modalOverlay');
+  if (o) { o.classList.remove('open'); document.body.style.overflow = ''; }
 });
-document.getElementById('modalOverlay').addEventListener('click', e => {
-  if (e.target === e.currentTarget) {
-    e.currentTarget.classList.remove('open');
-    document.body.style.overflow = '';
-  }
+const modalOverlay = document.getElementById('modalOverlay');
+if (modalOverlay) modalOverlay.addEventListener('click', e => {
+  if (e.target === e.currentTarget) { e.currentTarget.classList.remove('open'); document.body.style.overflow = ''; }
 });
 
-// ── Load Skills ───────────────────────────────────────────────
+// ── Load Skills ────────────────────────────────────────────────────────────────
 async function loadSkills() {
+  showSkeleton('skillsGrid', 4, 'skill');
   try {
-    const { data } = await apiFetch('/portfolio/skills');
+    const raw = await apiFetch('/portfolio/skills');
+    const skills = norm.skills(raw);
     const grid = document.getElementById('skillsGrid');
-    if (!data?.length) { grid.innerHTML = ''; return; }
-    grid.innerHTML = data.map(s => `
+    if (!grid) return;
+    if (!skills.length) { grid.innerHTML = ''; return; }
+    grid.innerHTML = skills.map(s => `
       <div class="skill-card">
         <div class="skill-icon">${s.icon || '◆'}</div>
         <h3 class="skill-name">${s.name}</h3>
         <p class="skill-desc">${s.description || ''}</p>
         <div class="skill-bar-wrap">
           <div class="skill-bar-label">
-            <span>Proficiency</span><span>${s.proficiency || 90}%</span>
+            <span>Proficiency</span><span>${s.proficiency ?? 90}%</span>
           </div>
           <div class="skill-bar">
-            <div class="skill-bar-fill" data-pct="${s.proficiency || 90}"></div>
+            <div class="skill-bar-fill" data-pct="${s.proficiency ?? 90}" style="width:0"></div>
           </div>
         </div>
         ${s.tools?.length ? `<div class="skill-tools">${s.tools.map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
       </div>`).join('');
     grid.querySelectorAll('.skill-card').forEach(el => skillObs.observe(el));
   } catch (e) {
-    console.warn('Skills fetch:', e.message);
-    document.getElementById('skillsGrid').innerHTML = '';
+    console.warn('[Skills]', e.message);
+    const grid = document.getElementById('skillsGrid');
+    if (grid) grid.innerHTML = '';
   }
 }
 
-// ── Load Experience ───────────────────────────────────────────
+// ── Load Experience ────────────────────────────────────────────────────────────
 async function loadExperience() {
   try {
-    const { data } = await apiFetch('/portfolio/experience');
+    const raw = await apiFetch('/portfolio/experience');
+    const experience = norm.experience(raw);
     const timeline = document.getElementById('timeline');
-    if (!data?.length) { timeline.innerHTML = ''; return; }
-    timeline.innerHTML = data.map(exp => {
+    if (!timeline) return;
+    if (!experience.length) { timeline.innerHTML = ''; return; }
+    timeline.innerHTML = experience.map(exp => {
       const start = new Date(exp.startDate).getFullYear();
       const end   = exp.isCurrent ? 'Present' : (exp.endDate ? new Date(exp.endDate).getFullYear() : '');
       const highlights = (exp.highlights || []).map(h => `<span class="highlight">${h}</span>`).join('');
@@ -1528,50 +1611,69 @@ async function loadExperience() {
     }).join('');
     timeline.querySelectorAll('.timeline-item').forEach(el => revealObs.observe(el));
   } catch (e) {
-    console.warn('Experience fetch:', e.message);
-    document.getElementById('timeline').innerHTML = '';
+    console.warn('[Experience]', e.message);
+    const tl = document.getElementById('timeline');
+    if (tl) tl.innerHTML = '';
   }
 }
 
-// ── Contact Form ──────────────────────────────────────────────
-document.getElementById('contactSubmit').addEventListener('click', async () => {
-  const name    = document.getElementById('name').value.trim();
-  const email   = document.getElementById('email').value.trim();
-  const message = document.getElementById('message').value.trim();
-  const status  = document.getElementById('formStatus');
-  const btn     = document.getElementById('contactSubmit');
+// ── Contact Form ───────────────────────────────────────────────────────────────
+const contactSubmit = document.getElementById('contactSubmit');
+if (contactSubmit) {
+  contactSubmit.addEventListener('click', async () => {
+    const name    = document.getElementById('name')?.value.trim();
+    const email   = document.getElementById('email')?.value.trim();
+    const message = document.getElementById('message')?.value.trim();
+    const status  = document.getElementById('formStatus');
+    const btn     = document.getElementById('contactSubmit');
 
-  if (!name || !email || !message) {
-    status.className = 'form-status error';
-    status.textContent = 'Please fill in all fields.';
-    return;
-  }
+    if (!name || !email || !message) {
+      if (status) { status.className = 'form-status error'; status.textContent = 'Please fill in all fields.'; }
+      return;
+    }
 
-  btn.disabled = true;
-  btn.textContent = 'Sending...';
+    // Email format check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (status) { status.className = 'form-status error'; status.textContent = 'Please enter a valid email address.'; }
+      return;
+    }
 
-  try {
-    await fetch(`${API}/portfolio/contact`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, message }),
-    }).then(r => r.json());
+    if (message.length < 10) {
+      if (status) { status.className = 'form-status error'; status.textContent = 'Message must be at least 10 characters.'; }
+      return;
+    }
 
-    status.className = 'form-status success';
-    status.textContent = '✓ Message sent! I\'ll get back to you soon.';
-    document.getElementById('name').value = '';
-    document.getElementById('email').value = '';
-    document.getElementById('message').value = '';
-  } catch {
-    status.className = 'form-status error';
-    status.textContent = 'Failed to send. Please try email directly.';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Send Message';
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    if (status) status.className = '';
+
+    try {
+      await apiFetch('/portfolio/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message }),
+      });
+      if (status) { status.className = 'form-status success'; status.textContent = '✓ Message sent! I\'ll get back to you soon.'; }
+      document.getElementById('name').value = '';
+      document.getElementById('email').value = '';
+      document.getElementById('message').value = '';
+    } catch (e) {
+      if (status) { status.className = 'form-status error'; status.textContent = e.message || 'Failed to send. Please try email directly.'; }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Message';
+    }
+  });
+}
+
+// ── Keyboard shortcut: Ctrl+Shift+A → Admin ────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+    window.location.href = 'admin-login.html';
   }
 });
 
-// ── Init ──────────────────────────────────────────────────────
+// ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
   await Promise.allSettled([
     loadAbout(),

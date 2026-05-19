@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard — Algzzar Admin</title>
+  <script src="js/env-config.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
   <style>
@@ -1073,55 +1074,129 @@
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
 
+
 <script>
-// ── Config ────────────────────────────────────────────────────
-const API = window.ALGZZAR_API_URL || 'http://localhost:5000/api';
+'use strict';
+// ── Config ────────────────────────────────────────────────────────────────────
+const API = window.ALGZZAR_API_URL || 'https://automatic-journey-x5qqvg699x5q3pv75-5000.app.github.dev/api';
 let token = localStorage.getItem('algzzar_access_token');
 
-// ── Auth Guard ────────────────────────────────────────────────
-if (!token) window.location.href = 'admin-login.html';
+// ── Auth Guard ─────────────────────────────────────────────────────────────────
+if (!token) { window.location.href = 'admin-login.html'; }
 
-// Load user
-const user = JSON.parse(localStorage.getItem('algzzar_user') || '{}');
-if (user.name) {
-  document.getElementById('userName').textContent = user.name;
-  document.getElementById('userAvatar').textContent = user.name[0].toUpperCase();
-}
+// Load user display
+try {
+  const user = JSON.parse(localStorage.getItem('algzzar_user') || '{}');
+  if (user.name) {
+    const un = document.getElementById('userName');
+    const ua = document.getElementById('userAvatar');
+    if (un) un.textContent = user.name;
+    if (ua) ua.textContent = user.name[0].toUpperCase();
+  }
+} catch {}
 
-// ── API Helper ────────────────────────────────────────────────
+// ── Core API Helper ────────────────────────────────────────────────────────────
+let _isRefreshing = false;
+let _refreshQueue = [];
+
 async function api(method, path, body, isForm) {
   token = localStorage.getItem('algzzar_access_token');
   const opts = {
     method,
     credentials: 'include',
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { 'Authorization': `Bearer ${token}` },
   };
   if (body) {
     if (isForm) { opts.body = body; }
     else { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   }
-  const res = await fetch(`${API}${path}`, opts);
+
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, opts);
+  } catch { throw new Error('Network error — is the backend running?'); }
+
   if (res.status === 401) {
-    localStorage.clear(); window.location.href = 'admin-login.html'; return;
+    if (!_isRefreshing) {
+      _isRefreshing = true;
+      try {
+        const rr = await fetch(`${API}/auth/refresh`, { method:'POST', credentials:'include' });
+        if (rr.ok) {
+          const rd = await rr.json();
+          const newToken = rd?.data?.accessToken || rd?.accessToken;
+          if (newToken) {
+            localStorage.setItem('algzzar_access_token', newToken);
+            token = newToken;
+            _refreshQueue.forEach(r => r());
+            _refreshQueue = [];
+            _isRefreshing = false;
+            return api(method, path, body, isForm);
+          }
+        }
+      } catch {}
+      _isRefreshing = false;
+    }
+    localStorage.clear();
+    window.location.href = 'admin-login.html';
+    return;
   }
-  const data = await res.json();
+
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
   return data;
 }
 
-// ── Toast ─────────────────────────────────────────────────────
+// Normalize response shapes from backend
+const norm = {
+  dashboard: (r) => r?.data ?? {},
+  projects:  (r) => r?.data?.projects ?? r?.data ?? [],
+  about:     (r) => r?.data?.about    ?? r?.data ?? null,
+  skills:    (r) => r?.data           ?? [],
+  experience:(r) => r?.data           ?? [],
+  messages:  (r) => r?.data           ?? [],
+  cats:      (r) => r?.data           ?? [],
+};
+
+// ── XHR Upload with Progress ───────────────────────────────────────────────────
+function uploadWithProgress(path, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API}${path}`, true);
+    xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('algzzar_access_token')}`);
+    xhr.withCredentials = true;
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+    }
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.message || `Upload failed ${xhr.status}`));
+      } catch { reject(new Error('Upload parse error')); }
+    };
+    xhr.onerror = () => reject(new Error('Upload network error'));
+    xhr.send(formData);
+  });
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
 function toast(msg, type = 'success') {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.textContent = (type === 'success' ? '✓ ' : '✗ ') + msg;
-  document.getElementById('toastContainer').appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  el.innerHTML = `<span>${type === 'success' ? '✓' : '✗'}</span> ${msg}`;
+  const container = document.getElementById('toastContainer');
+  if (container) container.appendChild(el);
+  setTimeout(() => el.remove(), 4500);
 }
 
-// ── Confirm Dialog ────────────────────────────────────────────
+// ── Confirm Dialog ─────────────────────────────────────────────────────────────
 function confirmDelete(msg, onYes) {
   const overlay = document.getElementById('confirmOverlay');
-  document.getElementById('confirmText').textContent = msg;
+  const text    = document.getElementById('confirmText');
+  if (!overlay || !text) { if (confirm(msg)) onYes(); return; }
+  text.textContent = msg;
   overlay.classList.add('open');
   const yes = document.getElementById('confirmYes');
   const no  = document.getElementById('confirmNo');
@@ -1130,11 +1205,11 @@ function confirmDelete(msg, onYes) {
   no.onclick  = close;
 }
 
-// ── Modal helpers ─────────────────────────────────────────────
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// ── Modal Helpers ──────────────────────────────────────────────────────────────
+const openModal  = id => document.getElementById(id)?.classList.add('open');
+const closeModal = id => document.getElementById(id)?.classList.remove('open');
 
-// ── Panel Navigation ──────────────────────────────────────────
+// ── Panel Navigation ───────────────────────────────────────────────────────────
 const panelLoaders = {};
 let currentPanel = 'dashboard';
 
@@ -1145,16 +1220,20 @@ function switchPanel(id) {
     n.classList.toggle('active', n.dataset.panel === id);
   });
   currentPanel = id;
-  document.getElementById('pageTitle').textContent = {
+  const titles = {
     dashboard: 'Dashboard', projects: 'Projects', skills: 'Skills',
-    experience: 'Experience', categories: 'Categories', messages: 'Messages', profile: 'Profile / About'
-  }[id] || id;
+    experience: 'Experience', categories: 'Categories',
+    messages: 'Messages', profile: 'Profile / About'
+  };
+  const pageTitle = document.getElementById('pageTitle');
+  if (pageTitle) pageTitle.textContent = titles[id] || id;
 
   const addBtn = document.getElementById('topbarAddBtn');
-  const addBtnMap = { projects: 'Add Project', skills: 'Add Skill', experience: 'Add Experience', categories: 'Add Category' };
-  if (addBtnMap[id]) { addBtn.style.display = ''; addBtn.textContent = '+ ' + addBtnMap[id].replace('Add ', ''); }
-  else addBtn.style.display = 'none';
-
+  if (addBtn) {
+    const addMap = { projects: 'Project', skills: 'Skill', experience: 'Experience', categories: 'Category' };
+    if (addMap[id]) { addBtn.style.display = ''; addBtn.textContent = `+ ${addMap[id]}`; }
+    else addBtn.style.display = 'none';
+  }
   if (panelLoaders[id]) panelLoaders[id]();
 }
 
@@ -1162,261 +1241,374 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(btn => {
   btn.addEventListener('click', () => switchPanel(btn.dataset.panel));
 });
 
-document.getElementById('topbarAddBtn').addEventListener('click', () => {
-  const actions = { projects: openProjectModal, skills: openSkillModal, experience: openExpModal, categories: openCatModal };
-  actions[currentPanel]?.();
-});
+const topbarAddBtn = document.getElementById('topbarAddBtn');
+if (topbarAddBtn) {
+  topbarAddBtn.addEventListener('click', () => {
+    const actions = { projects: openProjectModal, skills: openSkillModal, experience: openExpModal, categories: openCatModal };
+    actions[currentPanel]?.();
+  });
+}
 
-// ── Logout ────────────────────────────────────────────────────
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  await api('POST', '/auth/logout').catch(() => {});
-  localStorage.clear();
-  window.location.href = 'admin-login.html';
-});
+// ── Logout ─────────────────────────────────────────────────────────────────────
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', async () => {
+    try { await api('POST', '/auth/logout'); } catch {}
+    localStorage.clear();
+    window.location.href = 'admin-login.html';
+  });
+}
 
-// ═══════════════════════════════════════════════════════════════
-// DASHBOARD
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 async function loadDashboard() {
   try {
-    const { data } = await api('GET', '/admin/dashboard');
-    document.getElementById('ds-projects').textContent = data.projectsCount ?? '—';
-    document.getElementById('ds-views').textContent    = data.totalViews ?? '—';
-    document.getElementById('ds-messages').textContent = data.unreadMessages ?? '—';
-    document.getElementById('ds-skills').textContent   = data.skillsCount ?? '—';
-    if (data.unreadMessages > 0) {
-      const badge = document.getElementById('msgBadge');
-      badge.textContent = data.unreadMessages;
-      badge.style.display = '';
-    }
-  } catch { /* dashboard stats not critical */ }
+    const raw = await api('GET', '/admin/dashboard');
+    const data = norm.dashboard(raw);
 
-  // Recent projects
+    // Stats — handle both data shapes from adminController
+    const stats = data.stats || data;
+    const counters = {
+      'ds-projects': stats.totalProjects ?? stats.projectsCount ?? '—',
+      'ds-views':    stats.totalViews    ?? '—',
+      'ds-messages': stats.unreadMessages ?? '—',
+      'ds-skills':   stats.totalSkills   ?? stats.skillsCount ?? '—',
+    };
+    Object.entries(counters).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    });
+
+    // Unread badge
+    const unread = stats.unreadMessages ?? 0;
+    const badge = document.getElementById('msgBadge');
+    if (badge) { badge.textContent = unread; badge.style.display = unread > 0 ? '' : 'none'; }
+
+    // Recent messages
+    const recentMsgs = data.recentMessages || [];
+    const msgsEl = document.getElementById('recentMessagesBody');
+    if (msgsEl) {
+      msgsEl.innerHTML = recentMsgs.length
+        ? recentMsgs.map(m => `
+          <tr style="cursor:pointer" onclick="switchPanel('messages')">
+            <td>${m.name || '—'}</td>
+            <td>${m.email || '—'}</td>
+            <td>${m.subject || m.message?.slice(0,40) || '—'}</td>
+            <td><span class="badge ${m.isRead ? 'badge-muted' : 'badge-warning'}">${m.isRead ? 'Read' : 'Unread'}</span></td>
+          </tr>`).join('')
+        : '<tr><td colspan="4" style="text-align:center;color:var(--silver);padding:2rem">No messages yet</td></tr>';
+    }
+  } catch (e) { toast(e.message, 'error'); }
+
+  // Recent projects from admin projects endpoint
   try {
-    const { data } = await api('GET', '/admin/projects');
-    const recent = (data || []).slice(0, 5);
-    document.getElementById('recentProjectsBody').innerHTML = recent.map(p => `
-      <tr>
-        <td>${p.title}</td>
-        <td>${p.category?.name || '—'}</td>
-        <td>${p.views || 0}</td>
-        <td><span class="badge ${p.isPublished ? 'badge-success' : 'badge-muted'}">${p.isPublished ? 'Published' : 'Draft'}</span></td>
-      </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--silver);padding:2rem">No projects yet</td></tr>';
+    const raw = await api('GET', '/admin/projects');
+    const projects = norm.projects(raw);
+    const recent = projects.slice(0, 5);
+    const tbody = document.getElementById('recentProjectsBody');
+    if (tbody) {
+      tbody.innerHTML = recent.map(p => `
+        <tr>
+          <td>${p.title}</td>
+          <td>${p.category?.name || '—'}</td>
+          <td style="font-family:var(--mono);font-size:.7rem">${p.views || 0}</td>
+          <td><span class="badge ${p.isPublished ? 'badge-success' : 'badge-muted'}">${p.isPublished ? 'Published' : 'Draft'}</span></td>
+        </tr>`).join('')
+        || '<tr><td colspan="4" style="text-align:center;color:var(--silver);padding:2rem">No projects yet</td></tr>';
+    }
   } catch {}
 }
 panelLoaders['dashboard'] = loadDashboard;
 
-// ═══════════════════════════════════════════════════════════════
-// PROJECTS
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// PROJECTS PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 let categories = [];
 let allProjects = [];
 
 async function loadProjects() {
   try {
-    const { data } = await api('GET', '/admin/projects');
-    allProjects = data || [];
+    const raw = await api('GET', '/admin/projects');
+    allProjects = norm.projects(raw);
     renderProjects(allProjects);
   } catch (e) {
-    document.getElementById('projectsBody').innerHTML = 
-      `<tr><td colspan="7" style="text-align:center;color:var(--silver);padding:2rem">${e.message}</td></tr>`;
+    const tbody = document.getElementById('projectsBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--silver);padding:2rem">${e.message}</td></tr>`;
   }
 }
 panelLoaders['projects'] = loadProjects;
 
 function renderProjects(projects) {
-  document.getElementById('projectsBody').innerHTML = projects.length
+  const tbody = document.getElementById('projectsBody');
+  if (!tbody) return;
+  tbody.innerHTML = projects.length
     ? projects.map(p => `
       <tr>
         <td>${p.coverImage?.url ? `<img class="project-thumb" src="${p.coverImage.url}" alt="" />` : '<div class="no-thumb">◆</div>'}</td>
         <td style="font-weight:500">${p.title}</td>
         <td>${p.category?.name || '—'}</td>
-        <td>${p.views || 0}</td>
+        <td style="font-family:var(--mono);font-size:.7rem">${p.views || 0}</td>
         <td>
-          <label class="toggle-switch">
-            <input type="checkbox" ${p.isFeatured ? 'checked' : ''} onchange="toggleFeatured('${p._id}', this.checked)" />
+          <label class="toggle-switch" title="Featured">
+            <input type="checkbox" ${p.isFeatured ? 'checked' : ''} onchange="toggleFeatured('${p._id}',this)" />
             <div class="toggle-track"></div><div class="toggle-thumb"></div>
           </label>
         </td>
         <td>
-          <label class="toggle-switch">
-            <input type="checkbox" ${p.isPublished ? 'checked' : ''} onchange="togglePublish('${p._id}', this.checked)" />
+          <label class="toggle-switch" title="Published">
+            <input type="checkbox" ${p.isPublished ? 'checked' : ''} onchange="togglePublish('${p._id}',this)" />
             <div class="toggle-track"></div><div class="toggle-thumb"></div>
           </label>
         </td>
         <td><div class="td-actions">
           <button class="btn-icon" title="Edit" onclick="openProjectModal('${p._id}')">✏</button>
-          <button class="btn-danger" onclick="deleteProject('${p._id}', '${p.title.replace(/'/g, "\\'")}')">Delete</button>
+          <button class="btn-danger" onclick="deleteProject('${p._id}','${p.title.replace(/'/g,"\\'")}')">Delete</button>
         </div></td>
       </tr>`).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:var(--silver);padding:2rem">No projects yet. Click "+ Add" to create one.</td></tr>';
+    : '<tr><td colspan="7" style="text-align:center;color:var(--silver);padding:2rem">No projects yet. Click "+ Project" to create one.</td></tr>';
 }
 
-document.getElementById('projectSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  renderProjects(allProjects.filter(p => p.title.toLowerCase().includes(q) || p.category?.name?.toLowerCase().includes(q)));
-});
+const projectSearch = document.getElementById('projectSearch');
+if (projectSearch) {
+  projectSearch.addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    renderProjects(allProjects.filter(p => p.title.toLowerCase().includes(q) || p.category?.name?.toLowerCase().includes(q)));
+  });
+}
 
 async function loadCategoriesSelect() {
   if (!categories.length) {
-    const { data } = await api('GET', '/categories');
-    categories = data || [];
+    try {
+      const raw = await api('GET', '/categories');
+      categories = norm.cats(raw);
+    } catch { categories = []; }
   }
   const sel = document.getElementById('pCategory');
-  sel.innerHTML = '<option value="">Select category...</option>' +
-    categories.map(c => `<option value="${c._id}">${c.icon || ''} ${c.name}</option>`).join('');
+  if (sel) {
+    sel.innerHTML = '<option value="">Select category...</option>' +
+      categories.map(c => `<option value="${c._id}">${c.icon || ''} ${c.name}</option>`).join('');
+  }
 }
 
 function openProjectModal(id) {
-  const proj = id && typeof id === 'string' && id.length === 24 ? allProjects.find(p => p._id === id) : null;
-  document.getElementById('projectModalTitle').textContent = proj ? 'Edit Project' : 'New Project';
-  document.getElementById('projectId').value = proj?._id || '';
-  document.getElementById('pTitle').value = proj?.title || '';
-  document.getElementById('pShortDesc').value = proj?.shortDescription || '';
-  document.getElementById('pDesc').value = proj?.description || '';
-  document.getElementById('pClient').value = proj?.client || '';
-  document.getElementById('pYear').value = proj?.year || new Date().getFullYear();
-  document.getElementById('pLive').value = proj?.liveUrl || '';
-  document.getElementById('pBehance').value = proj?.behanceUrl || '';
-  document.getElementById('pTags').value = (proj?.tags || []).join(', ');
-  document.getElementById('pTools').value = (proj?.tools || []).join(', ');
-  document.getElementById('pPublished').checked = proj?.isPublished ?? true;
-  document.getElementById('pFeatured').checked = proj?.isFeatured ?? false;
-  document.getElementById('pLarge').checked = proj?.isLarge ?? false;
-  document.getElementById('coverPreview').innerHTML = proj?.coverImage?.url 
-    ? `<img class="preview-img" src="${proj.coverImage.url}" />` : '';
+  const proj = (typeof id === 'string' && id.length > 10) ? allProjects.find(p => p._id === id) : null;
+  const titleEl = document.getElementById('projectModalTitle');
+  if (titleEl) titleEl.textContent = proj ? 'Edit Project' : 'New Project';
+
+  const fields = {
+    projectId: proj?._id || '',
+    pTitle: proj?.title || '',
+    pShortDesc: proj?.shortDescription || '',
+    pDesc: proj?.description || '',
+    pClient: proj?.client || '',
+    pYear: proj?.year || new Date().getFullYear(),
+    pLive: proj?.liveUrl || '',
+    pBehance: proj?.behanceUrl || '',
+    pTags: (proj?.tags || []).join(', '),
+    pTools: (proj?.tools || []).join(', '),
+  };
+  Object.entries(fields).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  });
+
+  const checkboxes = {
+    pPublished: proj?.isPublished ?? true,
+    pFeatured:  proj?.isFeatured  ?? false,
+    pLarge:     proj?.isLarge     ?? false,
+  };
+  Object.entries(checkboxes).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = val;
+  });
+
+  const prevEl = document.getElementById('coverPreview');
+  if (prevEl) prevEl.innerHTML = proj?.coverImage?.url ? `<img class="preview-img" src="${proj.coverImage.url}" />` : '';
+
+  // Reset file input
+  const fileInput = document.getElementById('pCoverImage');
+  if (fileInput) fileInput.value = '';
+
+  // Reset progress
+  const prog = document.getElementById('uploadProgressWrap');
+  if (prog) prog.style.display = 'none';
+
   loadCategoriesSelect().then(() => {
-    if (proj?.category?._id) document.getElementById('pCategory').value = proj.category._id;
+    const cat = proj?.category?._id || proj?.category;
+    const sel = document.getElementById('pCategory');
+    if (sel && cat) sel.value = cat;
   });
   openModal('projectModal');
 }
 
-// Cover image preview
-document.getElementById('pCoverImage').addEventListener('change', function() {
-  const file = this.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => { document.getElementById('coverPreview').innerHTML = `<img class="preview-img" src="${e.target.result}" />`; };
-  reader.readAsDataURL(file);
-});
-
-document.getElementById('saveProjectBtn').addEventListener('click', async () => {
-  const id = document.getElementById('projectId').value;
-  const title = document.getElementById('pTitle').value.trim();
-  const category = document.getElementById('pCategory').value;
-  if (!title || !category) { toast('Title and category are required', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('title', title);
-  fd.append('category', category);
-  fd.append('shortDescription', document.getElementById('pShortDesc').value);
-  fd.append('description', document.getElementById('pDesc').value);
-  fd.append('client', document.getElementById('pClient').value);
-  fd.append('year', document.getElementById('pYear').value);
-  fd.append('liveUrl', document.getElementById('pLive').value);
-  fd.append('behanceUrl', document.getElementById('pBehance').value);
-  fd.append('tags', JSON.stringify(document.getElementById('pTags').value.split(',').map(s=>s.trim()).filter(Boolean)));
-  fd.append('tools', JSON.stringify(document.getElementById('pTools').value.split(',').map(s=>s.trim()).filter(Boolean)));
-  fd.append('isPublished', document.getElementById('pPublished').checked);
-  fd.append('isFeatured', document.getElementById('pFeatured').checked);
-  fd.append('isLarge', document.getElementById('pLarge').checked);
-  const coverFile = document.getElementById('pCoverImage').files[0];
-  if (coverFile) fd.append('coverImage', coverFile);
-
-  try {
-    if (id) {
-      await api('PUT', `/admin/projects/${id}`, fd, true);
-      toast('Project updated');
-    } else {
-      await api('POST', '/admin/projects', fd, true);
-      toast('Project created');
-    }
-    closeModal('projectModal');
-    loadProjects();
-    loadDashboard();
-  } catch (e) { toast(e.message, 'error'); }
-});
-
-async function togglePublish(id, val) {
-  try { await api('PATCH', `/admin/projects/${id}/toggle`); toast('Visibility updated'); }
-  catch (e) { toast(e.message, 'error'); loadProjects(); }
-}
-async function toggleFeatured(id, val) {
-  try { await api('PATCH', `/admin/projects/${id}/featured`); toast('Featured status updated'); }
-  catch (e) { toast(e.message, 'error'); loadProjects(); }
-}
-function deleteProject(id, title) {
-  confirmDelete(`Delete "${title}"? This cannot be undone.`, async () => {
-    try { await api('DELETE', `/admin/projects/${id}`); toast('Project deleted'); loadProjects(); loadDashboard(); }
-    catch (e) { toast(e.message, 'error'); }
+// Image preview
+const pCoverImage = document.getElementById('pCoverImage');
+if (pCoverImage) {
+  pCoverImage.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('Please select an image file', 'error'); this.value = ''; return; }
+    if (file.size > 10 * 1024 * 1024) { toast('Image must be under 10MB', 'error'); this.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const prev = document.getElementById('coverPreview');
+      if (prev) prev.innerHTML = `<img class="preview-img" src="${e.target.result}" />`;
+    };
+    reader.readAsDataURL(file);
   });
 }
 
-document.getElementById('closeProjectModal').addEventListener('click', () => closeModal('projectModal'));
-document.getElementById('cancelProjectModal').addEventListener('click', () => closeModal('projectModal'));
+const saveProjectBtn = document.getElementById('saveProjectBtn');
+if (saveProjectBtn) {
+  saveProjectBtn.addEventListener('click', async () => {
+    const id       = document.getElementById('projectId')?.value;
+    const title    = document.getElementById('pTitle')?.value.trim();
+    const category = document.getElementById('pCategory')?.value;
+    if (!title || !category) { toast('Title and category are required', 'error'); return; }
 
-// ═══════════════════════════════════════════════════════════════
-// SKILLS
-// ═══════════════════════════════════════════════════════════════
+    const fd = new FormData();
+    fd.append('title',            title);
+    fd.append('category',         category);
+    fd.append('shortDescription', document.getElementById('pShortDesc')?.value || '');
+    fd.append('description',      document.getElementById('pDesc')?.value || '');
+    fd.append('client',           document.getElementById('pClient')?.value || '');
+    fd.append('year',             document.getElementById('pYear')?.value || '');
+    fd.append('liveUrl',          document.getElementById('pLive')?.value || '');
+    fd.append('behanceUrl',       document.getElementById('pBehance')?.value || '');
+    fd.append('tags',  JSON.stringify((document.getElementById('pTags')?.value || '').split(',').map(s=>s.trim()).filter(Boolean)));
+    fd.append('tools', JSON.stringify((document.getElementById('pTools')?.value || '').split(',').map(s=>s.trim()).filter(Boolean)));
+    fd.append('isPublished', document.getElementById('pPublished')?.checked ?? true);
+    fd.append('isFeatured',  document.getElementById('pFeatured')?.checked  ?? false);
+    fd.append('isLarge',     document.getElementById('pLarge')?.checked     ?? false);
+
+    const coverFile = document.getElementById('pCoverImage')?.files[0];
+    if (coverFile) fd.append('coverImage', coverFile);
+
+    saveProjectBtn.disabled = true;
+    saveProjectBtn.textContent = 'Saving...';
+
+    // Show upload progress if file attached
+    const progWrap = document.getElementById('uploadProgressWrap');
+    const progBar  = document.getElementById('uploadProgressBar');
+    const progText = document.getElementById('uploadProgressText');
+    if (coverFile && progWrap) { progWrap.style.display = ''; }
+
+    try {
+      const endpoint = id ? `/admin/projects/${id}` : '/admin/projects';
+      const method   = id ? 'PUT' : 'POST';
+      await api(method, endpoint, fd, true);
+      toast(id ? 'Project updated' : 'Project created');
+      closeModal('projectModal');
+      loadProjects();
+      loadDashboard();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      saveProjectBtn.disabled = false;
+      saveProjectBtn.textContent = 'Save Project';
+      if (progWrap) progWrap.style.display = 'none';
+    }
+  });
+}
+
+async function togglePublish(id, checkbox) {
+  try {
+    await api('PATCH', `/admin/projects/${id}/toggle`);
+    toast('Visibility updated');
+  } catch (e) {
+    toast(e.message, 'error');
+    checkbox.checked = !checkbox.checked; // revert
+  }
+}
+
+async function toggleFeatured(id, checkbox) {
+  try {
+    await api('PATCH', `/admin/projects/${id}/featured`);
+    toast('Featured status updated');
+  } catch (e) {
+    toast(e.message, 'error');
+    checkbox.checked = !checkbox.checked;
+  }
+}
+
+function deleteProject(id, title) {
+  confirmDelete(`Delete "${title}"? This cannot be undone.`, async () => {
+    try {
+      await api('DELETE', `/admin/projects/${id}`);
+      toast('Project deleted');
+      loadProjects();
+      loadDashboard();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+document.getElementById('closeProjectModal')?.addEventListener('click', () => closeModal('projectModal'));
+document.getElementById('cancelProjectModal')?.addEventListener('click', () => closeModal('projectModal'));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SKILLS PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 let allSkills = [];
 
 async function loadSkills() {
   try {
-    const { data } = await api('GET', '/admin/skills');
-    allSkills = data || [];
+    const raw = await api('GET', '/admin/skills');
+    allSkills = norm.skills(raw);
     renderSkillsAdmin(allSkills);
   } catch (e) {
-    document.getElementById('skillsAdminGrid').innerHTML = `<p style="color:var(--silver);grid-column:span 3">${e.message}</p>`;
+    const grid = document.getElementById('skillsAdminGrid');
+    if (grid) grid.innerHTML = `<p style="color:var(--silver);grid-column:span 3">${e.message}</p>`;
   }
 }
 panelLoaders['skills'] = loadSkills;
 
 function renderSkillsAdmin(skills) {
   const grid = document.getElementById('skillsAdminGrid');
-  grid.innerHTML = skills.length ? skills.map(s => `
-    <div class="skill-admin-card">
-      <div class="skill-admin-card-actions">
-        <button class="btn-icon" onclick="openSkillModal('${s._id}')">✏</button>
-        <button class="btn-danger" onclick="deleteSkill('${s._id}', '${s.name.replace(/'/g,"\\'")}')">×</button>
-      </div>
-      <div style="font-size:2rem;margin-bottom:.75rem">${s.icon || '◆'}</div>
-      <div style="font-family:var(--serif);font-size:1.2rem;font-weight:400;margin-bottom:.5rem">${s.name}</div>
-      <div style="font-size:.8rem;color:var(--silver);margin-bottom:1rem">${s.description || ''}</div>
-      <div style="height:2px;background:rgba(154,149,144,.15);border-radius:1px;position:relative">
-        <div style="position:absolute;top:0;left:0;height:100%;width:${s.proficiency||90}%;background:linear-gradient(to right,var(--gold),var(--rust))"></div>
-      </div>
-      <div style="font-family:var(--mono);font-size:.6rem;color:var(--gold);margin-top:.4rem">${s.proficiency||90}%</div>
-    </div>`).join('')
-    : '<div class="loading-state" style="grid-column:span 3">No skills yet. Add some using the button above.</div>';
+  if (!grid) return;
+  grid.innerHTML = skills.length
+    ? skills.map(s => `
+      <div class="skill-admin-card">
+        <div class="skill-admin-card-actions">
+          <button class="btn-icon" onclick="openSkillModal('${s._id}')">✏</button>
+          <button class="btn-danger" onclick="deleteSkill('${s._id}','${s.name.replace(/'/g,"\\'")}')">×</button>
+        </div>
+        <div style="font-size:2rem;margin-bottom:.75rem">${s.icon || '◆'}</div>
+        <div style="font-family:var(--serif);font-size:1.2rem;font-weight:400;margin-bottom:.5rem">${s.name}</div>
+        <div style="font-size:.8rem;color:var(--silver);margin-bottom:1rem">${s.description || ''}</div>
+        <div style="height:2px;background:rgba(154,149,144,.15);border-radius:1px;position:relative">
+          <div style="position:absolute;top:0;left:0;height:100%;width:${s.proficiency ?? 90}%;background:linear-gradient(to right,var(--gold),var(--rust));transition:width .6s ease"></div>
+        </div>
+        <div style="font-family:var(--mono);font-size:.6rem;color:var(--gold);margin-top:.4rem">${s.proficiency ?? 90}%</div>
+        ${s.tools?.length ? `<div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.3rem">${s.tools.map(t=>`<span style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.15);padding:.15rem .4rem;font-size:.6rem;font-family:var(--mono)">${t}</span>`).join('')}</div>` : ''}
+      </div>`).join('')
+    : '<div class="loading-state" style="grid-column:span 3">No skills yet. Use "+ Skill" to add some.</div>';
 }
 
 function openSkillModal(id) {
   const s = id ? allSkills.find(sk => sk._id === id) : null;
-  document.getElementById('skillModalTitle').textContent = s ? 'Edit Skill' : 'New Skill';
-  document.getElementById('skillId').value = s?._id || '';
-  document.getElementById('sName').value = s?.name || '';
-  document.getElementById('sIcon').value = s?.icon || '';
-  document.getElementById('sDesc').value = s?.description || '';
-  document.getElementById('sProficiency').value = s?.proficiency ?? 90;
-  document.getElementById('sTools').value = (s?.tools || []).join(', ');
-  document.getElementById('sOrder').value = s?.order ?? 0;
+  const titleEl = document.getElementById('skillModalTitle');
+  if (titleEl) titleEl.textContent = s ? 'Edit Skill' : 'New Skill';
+  const fields = { skillId: s?._id||'', sName: s?.name||'', sIcon: s?.icon||'', sDesc: s?.description||'', sProficiency: s?.proficiency??90, sTools: (s?.tools||[]).join(', '), sOrder: s?.order??0 };
+  Object.entries(fields).forEach(([fid, val]) => { const el = document.getElementById(fid); if (el) el.value = val; });
   openModal('skillModal');
 }
 
-document.getElementById('saveSkillBtn').addEventListener('click', async () => {
-  const id = document.getElementById('skillId').value;
+document.getElementById('saveSkillBtn')?.addEventListener('click', async () => {
+  const id = document.getElementById('skillId')?.value;
+  const name = document.getElementById('sName')?.value.trim();
+  if (!name) { toast('Skill name is required', 'error'); return; }
   const body = {
-    name: document.getElementById('sName').value.trim(),
-    icon: document.getElementById('sIcon').value,
-    description: document.getElementById('sDesc').value,
-    proficiency: parseInt(document.getElementById('sProficiency').value),
-    tools: document.getElementById('sTools').value.split(',').map(s=>s.trim()).filter(Boolean),
-    order: parseInt(document.getElementById('sOrder').value) || 0,
+    name,
+    icon:        document.getElementById('sIcon')?.value || '',
+    description: document.getElementById('sDesc')?.value || '',
+    proficiency: parseInt(document.getElementById('sProficiency')?.value) || 90,
+    tools:       (document.getElementById('sTools')?.value || '').split(',').map(s=>s.trim()).filter(Boolean),
+    order:       parseInt(document.getElementById('sOrder')?.value) || 0,
   };
-  if (!body.name) { toast('Name required', 'error'); return; }
   try {
     if (id) { await api('PUT', `/admin/skills/${id}`, body); toast('Skill updated'); }
-    else { await api('POST', '/admin/skills', body); toast('Skill created'); }
+    else    { await api('POST', '/admin/skills', body);     toast('Skill created'); }
     closeModal('skillModal');
     loadSkills();
     loadDashboard();
@@ -1430,23 +1622,25 @@ function deleteSkill(id, name) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// EXPERIENCE
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// EXPERIENCE PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 let allExp = [];
 
 async function loadExperience() {
   try {
-    const { data } = await api('GET', '/admin/experience');
-    allExp = data || [];
-    document.getElementById('experienceBody').innerHTML = allExp.length
+    const raw = await api('GET', '/admin/experience');
+    allExp = norm.experience(raw);
+    const tbody = document.getElementById('experienceBody');
+    if (!tbody) return;
+    tbody.innerHTML = allExp.length
       ? allExp.map(e => {
           const start = new Date(e.startDate).getFullYear();
-          const end = e.isCurrent ? 'Present' : (e.endDate ? new Date(e.endDate).getFullYear() : '');
+          const end   = e.isCurrent ? 'Present' : (e.endDate ? new Date(e.endDate).getFullYear() : '');
           return `<tr>
             <td style="font-weight:500">${e.title}</td>
             <td>${e.organization || '—'}</td>
-            <td style="font-family:var(--mono);font-size:.75rem">${start}${end ? ' – '+end : ''}</td>
+            <td style="font-family:var(--mono);font-size:.7rem">${start}${end ? ' – '+end : ''}</td>
             <td><span class="badge ${e.type==='work'?'badge-warning':'badge-muted'}">${e.type}</span></td>
             <td><div class="td-actions">
               <button class="btn-icon" onclick="openExpModal('${e._id}')">✏</button>
@@ -1454,46 +1648,55 @@ async function loadExperience() {
             </div></td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="5" style="text-align:center;color:var(--silver);padding:2rem">No experience added yet</td></tr>';
+      : '<tr><td colspan="5" style="text-align:center;color:var(--silver);padding:2rem">No experience entries yet</td></tr>';
   } catch (e) {
-    document.getElementById('experienceBody').innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--silver)">${e.message}</td></tr>`;
+    const tbody = document.getElementById('experienceBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--silver)">${e.message}</td></tr>`;
   }
 }
 panelLoaders['experience'] = loadExperience;
 
 function openExpModal(id) {
   const e = id ? allExp.find(x => x._id === id) : null;
-  document.getElementById('expModalTitle').textContent = e ? 'Edit Experience' : 'New Experience';
-  document.getElementById('expId').value = e?._id || '';
-  document.getElementById('eTitle').value = e?.title || '';
-  document.getElementById('eType').value = e?.type || 'work';
-  document.getElementById('eOrg').value = e?.organization || '';
-  document.getElementById('eLocation').value = e?.location || '';
-  document.getElementById('eStart').value = e?.startDate ? new Date(e.startDate).toISOString().slice(0,10) : '';
-  document.getElementById('eEnd').value = e?.endDate ? new Date(e.endDate).toISOString().slice(0,10) : '';
-  document.getElementById('eDesc').value = e?.description || '';
-  document.getElementById('eHighlights').value = (e?.highlights || []).join('\n');
-  document.getElementById('eCurrent').checked = e?.isCurrent ?? false;
+  const titleEl = document.getElementById('expModalTitle');
+  if (titleEl) titleEl.textContent = e ? 'Edit Experience' : 'New Experience';
+  const fields = {
+    expId:       e?._id || '',
+    eTitle:      e?.title || '',
+    eType:       e?.type || 'work',
+    eOrg:        e?.organization || '',
+    eLocation:   e?.location || '',
+    eStart:      e?.startDate ? new Date(e.startDate).toISOString().slice(0,10) : '',
+    eEnd:        e?.endDate   ? new Date(e.endDate).toISOString().slice(0,10)   : '',
+    eDesc:       e?.description || '',
+    eHighlights: (e?.highlights || []).join('\n'),
+  };
+  Object.entries(fields).forEach(([fid, val]) => { const el = document.getElementById(fid); if (el) el.value = val; });
+  const curEl = document.getElementById('eCurrent');
+  if (curEl) curEl.checked = e?.isCurrent ?? false;
   openModal('expModal');
 }
 
-document.getElementById('saveExpBtn').addEventListener('click', async () => {
-  const id = document.getElementById('expId').value;
+document.getElementById('saveExpBtn')?.addEventListener('click', async () => {
+  const id = document.getElementById('expId')?.value;
+  const title = document.getElementById('eTitle')?.value.trim();
+  const startDate = document.getElementById('eStart')?.value;
+  if (!title || !startDate) { toast('Title and start date are required', 'error'); return; }
+  const endVal = document.getElementById('eEnd')?.value;
   const body = {
-    title: document.getElementById('eTitle').value.trim(),
-    type: document.getElementById('eType').value,
-    organization: document.getElementById('eOrg').value,
-    location: document.getElementById('eLocation').value,
-    startDate: document.getElementById('eStart').value,
-    endDate: document.getElementById('eEnd').value || undefined,
-    description: document.getElementById('eDesc').value,
-    highlights: document.getElementById('eHighlights').value.split('\n').map(s=>s.trim()).filter(Boolean),
-    isCurrent: document.getElementById('eCurrent').checked,
+    title,
+    type:         document.getElementById('eType')?.value || 'work',
+    organization: document.getElementById('eOrg')?.value || '',
+    location:     document.getElementById('eLocation')?.value || '',
+    startDate,
+    endDate:      endVal || undefined,
+    description:  document.getElementById('eDesc')?.value || '',
+    highlights:   (document.getElementById('eHighlights')?.value || '').split('\n').map(s=>s.trim()).filter(Boolean),
+    isCurrent:    document.getElementById('eCurrent')?.checked ?? false,
   };
-  if (!body.title || !body.startDate) { toast('Title and start date required', 'error'); return; }
   try {
     if (id) { await api('PUT', `/admin/experience/${id}`, body); toast('Experience updated'); }
-    else { await api('POST', '/admin/experience', body); toast('Experience added'); }
+    else    { await api('POST', '/admin/experience', body);      toast('Experience added'); }
     closeModal('expModal');
     loadExperience();
   } catch (e) { toast(e.message, 'error'); }
@@ -1506,19 +1709,21 @@ function deleteExp(id, title) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CATEGORIES
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// CATEGORIES PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 let allCats = [];
 
 async function loadCategories() {
   try {
-    const { data } = await api('GET', '/categories');
-    allCats = data || [];
-    document.getElementById('categoriesBody').innerHTML = allCats.length
+    const raw = await api('GET', '/categories');
+    allCats = norm.cats(raw);
+    const tbody = document.getElementById('categoriesBody');
+    if (!tbody) return;
+    tbody.innerHTML = allCats.length
       ? allCats.map(c => `<tr>
           <td style="font-weight:500">${c.name}</td>
-          <td style="font-family:var(--mono);font-size:.75rem">${c.slug || ''}</td>
+          <td style="font-family:var(--mono);font-size:.7rem">${c.slug || '—'}</td>
           <td style="font-size:1.2rem">${c.icon || ''}</td>
           <td><span class="badge ${c.isActive ? 'badge-success' : 'badge-muted'}">${c.isActive ? 'Active' : 'Hidden'}</span></td>
           <td><div class="td-actions">
@@ -1533,25 +1738,21 @@ panelLoaders['categories'] = loadCategories;
 
 function openCatModal(id) {
   const c = id ? allCats.find(x => x._id === id) : null;
-  document.getElementById('catModalTitle').textContent = c ? 'Edit Category' : 'New Category';
-  document.getElementById('catId').value = c?._id || '';
-  document.getElementById('catName').value = c?.name || '';
-  document.getElementById('catIcon').value = c?.icon || '';
-  document.getElementById('catDesc').value = c?.description || '';
+  const titleEl = document.getElementById('catModalTitle');
+  if (titleEl) titleEl.textContent = c ? 'Edit Category' : 'New Category';
+  const fields = { catId: c?._id||'', catName: c?.name||'', catIcon: c?.icon||'', catDesc: c?.description||'' };
+  Object.entries(fields).forEach(([fid, val]) => { const el = document.getElementById(fid); if (el) el.value = val; });
   openModal('catModal');
 }
 
-document.getElementById('saveCatBtn').addEventListener('click', async () => {
-  const id = document.getElementById('catId').value;
-  const body = {
-    name: document.getElementById('catName').value.trim(),
-    icon: document.getElementById('catIcon').value,
-    description: document.getElementById('catDesc').value,
-  };
-  if (!body.name) { toast('Name required', 'error'); return; }
+document.getElementById('saveCatBtn')?.addEventListener('click', async () => {
+  const id = document.getElementById('catId')?.value;
+  const name = document.getElementById('catName')?.value.trim();
+  if (!name) { toast('Category name required', 'error'); return; }
+  const body = { name, icon: document.getElementById('catIcon')?.value || '', description: document.getElementById('catDesc')?.value || '' };
   try {
     if (id) { await api('PUT', `/categories/${id}`, body); toast('Category updated'); }
-    else { await api('POST', '/categories', body); toast('Category created'); }
+    else    { await api('POST', '/categories', body);      toast('Category created'); }
     closeModal('catModal');
     loadCategories();
     categories = []; // invalidate cache
@@ -1560,38 +1761,42 @@ document.getElementById('saveCatBtn').addEventListener('click', async () => {
 
 function deleteCat(id, name) {
   confirmDelete(`Delete category "${name}"?`, async () => {
-    try { await api('DELETE', `/categories/${id}`); toast('Deleted'); loadCategories(); }
+    try { await api('DELETE', `/categories/${id}`); toast('Deleted'); loadCategories(); categories = []; }
     catch (e) { toast(e.message, 'error'); }
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MESSAGES
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// MESSAGES PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 let allMessages = [];
 let currentMsgId = null;
 
 async function loadMessages() {
   try {
-    const { data } = await api('GET', '/admin/messages');
-    allMessages = data || [];
+    const raw = await api('GET', '/admin/messages');
+    allMessages = norm.messages(raw);
     const unread = allMessages.filter(m => !m.isRead).length;
     const badge = document.getElementById('msgBadge');
-    if (unread > 0) { badge.textContent = unread; badge.style.display = ''; }
-    else badge.style.display = 'none';
+    if (badge) { badge.textContent = unread; badge.style.display = unread > 0 ? '' : 'none'; }
 
-    document.getElementById('messagesList').innerHTML = allMessages.length
+    const list = document.getElementById('messagesList');
+    if (!list) return;
+    list.innerHTML = allMessages.length
       ? allMessages.map(m => `
         <div class="msg-item ${m.isRead ? '' : 'unread'}" onclick="openMessage('${m._id}')">
           <div class="msg-dot ${m.isRead ? 'read' : ''}"></div>
-          <div>
+          <div style="flex:1;min-width:0">
             <div class="msg-sender">${m.name || 'Unknown'}</div>
-            <div class="msg-preview">${m.message || ''}</div>
+            <div class="msg-preview">${(m.message || '').slice(0, 80)}</div>
           </div>
           <div class="msg-date">${new Date(m.createdAt).toLocaleDateString()}</div>
         </div>`).join('')
       : '<div class="loading-state">No messages yet</div>';
-  } catch (e) { document.getElementById('messagesList').innerHTML = `<div class="loading-state">${e.message}</div>`; }
+  } catch (e) {
+    const list = document.getElementById('messagesList');
+    if (list) list.innerHTML = `<div class="loading-state">${e.message}</div>`;
+  }
 }
 panelLoaders['messages'] = loadMessages;
 
@@ -1599,78 +1804,147 @@ async function openMessage(id) {
   const msg = allMessages.find(m => m._id === id);
   if (!msg) return;
   currentMsgId = id;
-  document.getElementById('msgSender').textContent = msg.name;
-  document.getElementById('msgFrom').textContent = msg.email;
-  document.getElementById('msgDate').textContent = new Date(msg.createdAt).toLocaleString();
-  document.getElementById('msgBody').textContent = msg.message;
-  document.getElementById('msgReplyLink').href = `mailto:${msg.email}?subject=Re: Your message&body=Hi ${msg.name},%0A%0A`;
+  document.getElementById('msgSender').textContent = msg.name || '—';
+  document.getElementById('msgFrom').textContent   = msg.email || '—';
+  document.getElementById('msgDate').textContent   = new Date(msg.createdAt).toLocaleString();
+  document.getElementById('msgBody').textContent   = msg.message || '';
+  const replyLink = document.getElementById('msgReplyLink');
+  if (replyLink) replyLink.href = `mailto:${msg.email}?subject=Re: Your message&body=Hi ${msg.name},%0A%0A`;
   openModal('msgModal');
   if (!msg.isRead) {
     try { await api('PATCH', `/admin/messages/${id}/read`); loadMessages(); } catch {}
   }
 }
 
-document.getElementById('msgDeleteBtn').addEventListener('click', () => {
+document.getElementById('msgDeleteBtn')?.addEventListener('click', () => {
   closeModal('msgModal');
-  confirmDelete('Delete this message?', async () => {
+  confirmDelete('Delete this message permanently?', async () => {
     try { await api('DELETE', `/admin/messages/${currentMsgId}`); toast('Message deleted'); loadMessages(); }
     catch (e) { toast(e.message, 'error'); }
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// PROFILE / ABOUT
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// PROFILE / ABOUT PANEL
+// ══════════════════════════════════════════════════════════════════════════════
 async function loadProfile() {
   try {
-    const { data } = await api('GET', '/admin/about');
+    const raw = await api('GET', '/admin/about');
+    const data = norm.about(raw);
     if (!data) return;
-    document.getElementById('profileName').value = data.name || '';
-    document.getElementById('profileTitle').value = data.title || '';
-    document.getElementById('profileTagline').value = data.tagline || '';
-    document.getElementById('profileBioShort').value = data.bioShort || '';
-    document.getElementById('profileBio').value = data.bio || '';
-    document.getElementById('profileEmail').value = data.email || '';
-    document.getElementById('profileLocation').value = data.location || '';
-    document.getElementById('profileSpec').value = data.specialization || '';
-    document.getElementById('profileStyle').value = data.style || '';
-    document.getElementById('profileYears').value = data.yearsExperience || '';
-    document.getElementById('profileAvail').checked = data.availableForWork ?? true;
+
+    const fieldMap = {
+      profileName:     data.name || '',
+      profileTitle:    data.title || '',
+      profileTagline:  data.tagline || '',
+      profileBioShort: data.bioShort || '',
+      profileBio:      data.bio || '',
+      profileEmail:    data.email || '',
+      profileLocation: data.location || '',
+      profileSpec:     data.specialization || '',
+      profileStyle:    data.style || '',
+      profileYears:    data.yearsExperience || '',
+    };
+    Object.entries(fieldMap).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    });
+
+    const availEl = document.getElementById('profileAvail');
+    if (availEl) availEl.checked = data.availableForWork ?? true;
+
     if (data.avatar?.url) {
       const img = document.getElementById('profileAvatarImg');
-      img.src = data.avatar.url;
-      img.style.display = 'block';
+      if (img) { img.src = data.avatar.url; img.style.display = 'block'; }
     }
+
+    // Social links editor
+    renderSocialLinksEditor(data.socialLinks || []);
   } catch (e) { toast(e.message, 'error'); }
 }
 panelLoaders['profile'] = loadProfile;
 
-document.getElementById('saveProfileBtn').addEventListener('click', async () => {
+// ── Social Links inline editor ────────────────────────────────────────────────
+let socialLinksData = [];
+
+function renderSocialLinksEditor(links) {
+  socialLinksData = [...links];
+  const container = document.getElementById('socialLinksEditor');
+  if (!container) return;
+  container.innerHTML = socialLinksData.map((s, i) => `
+    <div class="social-link-row" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.5rem;align-items:center;margin-bottom:.5rem">
+      <input type="text" class="form-input" value="${s.platform || ''}" placeholder="Platform (e.g. instagram)" onchange="socialLinksData[${i}].platform=this.value" style="font-size:.7rem;padding:.5rem" />
+      <input type="text" class="form-input" value="${s.label || ''}" placeholder="Label" onchange="socialLinksData[${i}].label=this.value" style="font-size:.7rem;padding:.5rem" />
+      <input type="url" class="form-input" value="${s.url || ''}" placeholder="https://..." onchange="socialLinksData[${i}].url=this.value" style="font-size:.7rem;padding:.5rem" />
+      <button class="btn-danger" onclick="removeSocialLink(${i})" style="padding:.4rem .6rem">×</button>
+    </div>`).join('') || '<p style="color:var(--silver);font-size:.7rem;font-family:var(--mono)">No social links yet</p>';
+}
+
+window.removeSocialLink = function(i) {
+  socialLinksData.splice(i, 1);
+  renderSocialLinksEditor(socialLinksData);
+};
+
+document.getElementById('addSocialLinkBtn')?.addEventListener('click', () => {
+  socialLinksData.push({ platform:'', label:'', url:'', order: socialLinksData.length });
+  renderSocialLinksEditor(socialLinksData);
+});
+
+// Avatar preview
+document.getElementById('avatarFile')?.addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('profileAvatarImg');
+    if (img) { img.src = e.target.result; img.style.display = 'block'; }
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('saveProfileBtn')?.addEventListener('click', async () => {
   const fd = new FormData();
-  ['name','title','tagline','bioShort','bio','email','location'].forEach(id => {
-    fd.append(id === 'bioShort' ? 'bioShort' : id, document.getElementById(`profile${id[0].toUpperCase()+id.slice(1)}`).value);
+  const textFields = [
+    ['name',            'profileName'],
+    ['title',           'profileTitle'],
+    ['tagline',         'profileTagline'],
+    ['bioShort',        'profileBioShort'],
+    ['bio',             'profileBio'],
+    ['email',           'profileEmail'],
+    ['location',        'profileLocation'],
+    ['specialization',  'profileSpec'],
+    ['style',           'profileStyle'],
+    ['yearsExperience', 'profileYears'],
+  ];
+  textFields.forEach(([key, domId]) => {
+    const el = document.getElementById(domId);
+    if (el) fd.append(key, el.value);
   });
-  fd.append('specialization', document.getElementById('profileSpec').value);
-  fd.append('style', document.getElementById('profileStyle').value);
-  fd.append('yearsExperience', document.getElementById('profileYears').value);
-  fd.append('availableForWork', document.getElementById('profileAvail').checked);
-  const avatarFile = document.getElementById('avatarFile').files[0];
+  fd.append('availableForWork', document.getElementById('profileAvail')?.checked ?? true);
+  fd.append('socialLinks', JSON.stringify(socialLinksData.filter(s => s.url)));
+  const avatarFile = document.getElementById('avatarFile')?.files[0];
   if (avatarFile) fd.append('avatar', avatarFile);
   try {
     await api('PUT', '/admin/about', fd, true);
-    toast('Profile saved');
+    toast('Profile saved successfully');
     loadProfile();
   } catch (e) { toast(e.message, 'error'); }
 });
 
-// ── Close modals on overlay click ─────────────────────────────
+// ── Close modals on overlay click ──────────────────────────────────────────────
 ['projectModal','skillModal','expModal','catModal','msgModal'].forEach(id => {
-  document.getElementById(id).addEventListener('click', e => {
+  document.getElementById(id)?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeModal(id);
   });
 });
 
-// ── Init ──────────────────────────────────────────────────────
+// ── Skill/Exp/Cat modal close buttons ─────────────────────────────────────────
+['skill','exp','cat','msg'].forEach(prefix => {
+  document.getElementById(`close${prefix.charAt(0).toUpperCase()+prefix.slice(1)}Modal`)?.addEventListener('click', () => closeModal(`${prefix}Modal`));
+  document.getElementById(`cancel${prefix.charAt(0).toUpperCase()+prefix.slice(1)}Modal`)?.addEventListener('click', () => closeModal(`${prefix}Modal`));
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────────
 loadDashboard();
 </script>
 </body>
