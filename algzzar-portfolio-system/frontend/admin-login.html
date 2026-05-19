@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Access — Algzzar System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0a0a08;
+      --paper: #f5f1eb;
+      --gold: #c9a84c;
+      --rust: #8b3a2a;
+      --silver: #9a9590;
+      --dark: #111109;
+      --card: #161614;
+      --serif: 'Cormorant Garamond', Georgia, serif;
+      --mono: 'Space Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      background: var(--dark);
+      color: var(--paper);
+      font-family: var(--mono);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Animated background */
+    .bg {
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse 70% 60% at 0% 100%, rgba(139,58,42,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse 50% 70% at 100% 0%, rgba(201,168,76,0.08) 0%, transparent 50%);
+    }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(201,168,76,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,168,76,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    .bg-lines {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+    .bg-lines::before, .bg-lines::after {
+      content: '';
+      position: absolute;
+      width: 1px;
+      height: 100%;
+      background: linear-gradient(to bottom, transparent, rgba(201,168,76,0.2), transparent);
+      animation: moveLine 8s ease-in-out infinite;
+    }
+    .bg-lines::before { left: 20%; animation-delay: 0s; }
+    .bg-lines::after  { right: 20%; animation-delay: 4s; }
+    @keyframes moveLine {
+      0%, 100% { opacity: 0; transform: translateY(-100%); }
+      50% { opacity: 1; }
+      100% { transform: translateY(100%); }
+    }
+
+    /* Card */
+    .login-card {
+      position: relative;
+      z-index: 10;
+      width: 440px;
+      background: var(--card);
+      border: 1px solid rgba(201,168,76,0.15);
+      padding: 3rem;
+      animation: cardIn 0.8s cubic-bezier(0.23,1,0.32,1) forwards;
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    @keyframes cardIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-deco {
+      position: absolute;
+      top: -1px; left: -1px; right: -1px;
+      height: 2px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+
+    /* Logo */
+    .login-logo {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .logo-symbol {
+      font-family: var(--serif);
+      font-size: 3rem;
+      font-weight: 300;
+      color: var(--gold);
+      line-height: 1;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    .logo-text {
+      font-size: 0.6rem;
+      letter-spacing: 0.4em;
+      text-transform: uppercase;
+      color: var(--silver);
+    }
+
+    /* Title */
+    .login-title {
+      font-family: var(--serif);
+      font-size: 1.8rem;
+      font-weight: 300;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    .login-subtitle {
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--silver);
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    /* Divider */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .divider-line { flex: 1; height: 1px; background: rgba(201,168,76,0.15); }
+    .divider-text { font-size: 0.55rem; letter-spacing: 0.2em; color: var(--silver); }
+
+    /* Form */
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.55rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 0.5rem;
+    }
+    .form-input {
+      width: 100%;
+      background: rgba(201,168,76,0.03);
+      border: 1px solid rgba(201,168,76,0.15);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      padding: 0.875rem 1rem;
+      outline: none;
+      transition: border-color 0.3s, background 0.3s;
+    }
+    .form-input:focus {
+      border-color: rgba(201,168,76,0.5);
+      background: rgba(201,168,76,0.05);
+    }
+    .form-input::placeholder { color: rgba(154,149,144,0.4); }
+
+    /* Submit */
+    .btn-submit {
+      width: 100%;
+      background: var(--gold);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      border: none;
+      padding: 1rem;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s;
+    }
+    .btn-submit::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--rust);
+      transform: translateX(-100%);
+      transition: transform 0.4s cubic-bezier(0.23,1,0.32,1);
+    }
+    .btn-submit:hover::before { transform: translateX(0); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-submit span { position: relative; }
+
+    /* Error */
+    .form-error {
+      margin-top: 1rem;
+      background: rgba(201,76,76,0.08);
+      border: 1px solid rgba(201,76,76,0.2);
+      color: #d9534f;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      padding: 0.75rem 1rem;
+      display: none;
+    }
+    .form-error.show { display: block; }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(10,10,8,0.3);
+      border-top-color: var(--ink);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Back link */
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--silver);
+      text-decoration: none;
+      transition: color 0.3s;
+    }
+    .back-link:hover { color: var(--gold); }
+
+    /* Security badge */
+    .security-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      font-size: 0.55rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(154,149,144,0.4);
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="bg-grid"></div>
+<div class="bg-lines"></div>
+
+<div class="login-card">
+  <div class="login-deco"></div>
+  
+  <div class="login-logo">
+    <span class="logo-symbol">A</span>
+    <span class="logo-text">Algzzar System</span>
+  </div>
+
+  <h1 class="login-title">Admin Access</h1>
+  <p class="login-subtitle">Restricted Area · Authenticate</p>
+
+  <div class="divider">
+    <div class="divider-line"></div>
+    <span class="divider-text">Credentials Required</span>
+    <div class="divider-line"></div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label" for="loginEmail">Email Address</label>
+    <input type="email" id="loginEmail" class="form-input" placeholder="admin@algzzar.com" autocomplete="email" />
+  </div>
+  <div class="form-group">
+    <label class="form-label" for="loginPassword">Password</label>
+    <input type="password" id="loginPassword" class="form-input" placeholder="••••••••••" autocomplete="current-password" />
+  </div>
+
+  <div class="form-error" id="loginError"></div>
+
+  <button class="btn-submit" id="loginBtn">
+    <span id="loginBtnText">Enter System</span>
+  </button>
+
+  <div class="security-note">
+    <span>🔒</span>
+    <span>Secured · JWT + HTTP-Only Cookies</span>
+  </div>
+
+  <a href="index.html" class="back-link">← Return to Portfolio</a>
+</div>
+
+<script>
+const API = window.ALGZZAR_API_URL || 'http://localhost:5000/api';
+
+// Redirect if already logged in
+const existingToken = localStorage.getItem('algzzar_access_token');
+if (existingToken) {
+  window.location.href = 'dashboard.html';
+}
+
+const emailInput = document.getElementById('loginEmail');
+const passInput  = document.getElementById('loginPassword');
+const btn        = document.getElementById('loginBtn');
+const btnText    = document.getElementById('loginBtnText');
+const errorEl    = document.getElementById('loginError');
+
+function setLoading(loading) {
+  btn.disabled = loading;
+  btnText.innerHTML = loading 
+    ? '<span class="spinner"></span>Authenticating...' 
+    : 'Enter System';
+}
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.classList.add('show');
+}
+
+async function doLogin() {
+  const email    = emailInput.value.trim();
+  const password = passInput.value;
+  errorEl.classList.remove('show');
+
+  if (!email || !password) {
+    showError('Both fields are required.');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const res = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.message || 'Authentication failed');
+
+    localStorage.setItem('algzzar_access_token', data.data.accessToken);
+    localStorage.setItem('algzzar_user', JSON.stringify(data.data.user));
+
+    window.location.href = 'dashboard.html';
+  } catch (e) {
+    showError(e.message);
+    passInput.value = '';
+  } finally {
+    setLoading(false);
+  }
+}
+
+btn.addEventListener('click', doLogin);
+[emailInput, passInput].forEach(el => {
+  el.addEventListener('keydown', e => e.key === 'Enter' && doLogin());
+});
+</script>
+</body>
+</html>
