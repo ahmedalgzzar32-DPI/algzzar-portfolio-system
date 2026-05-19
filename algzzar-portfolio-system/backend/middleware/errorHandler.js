@@ -1,74 +1,82 @@
-const logger = require('../utils/logger');
-const { AppError } = require('../utils/helpers');
-const config = require('../config/config');
+'use strict';
+/**
+ * middleware/errorHandler.js
+ * Centralised Express error handler — never leaks internals in production.
+ */
 
-// Handle specific Mongoose / JWT error types
-const handleCastError = (err) =>
-  new AppError(`Invalid ${err.path}: ${err.value}`, 400);
+const { logger } = require('../utils/logger');
 
-const handleDuplicateKeyError = (err) => {
-  const field = Object.keys(err.keyValue)[0];
-  return new AppError(`${field} already exists. Please use a different value.`, 409);
-};
+// ══════════════════════════════════════════════════════════════
+// CUSTOM ERROR CLASS
+// ══════════════════════════════════════════════════════════════
+class AppError extends Error {
+  constructor(message, statusCode, code = null) {
+    super(message);
+    this.statusCode    = statusCode;
+    this.status        = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
+    this.code          = code;
+    this.isOperational = true;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
 
-const handleValidationError = (err) => {
-  const errors = Object.values(err.errors).map((e) => ({
-    field: e.path,
-    message: e.message,
-  }));
-  return new AppError('Validation failed', 422, errors);
-};
+// ══════════════════════════════════════════════════════════════
+// ERROR TRANSLATORS
+// ══════════════════════════════════════════════════════════════
+const handleCastError        = (e) => new AppError(`Invalid ${e.path}: ${e.value}`, 400, 'INVALID_ID');
+const handleDuplicateKey     = (e) => new AppError(`Duplicate value: "${Object.keys(e.keyValue)[0]}" already exists`, 409, 'DUPLICATE');
+const handleValidationError  = (e) => new AppError(Object.values(e.errors).map(v => v.message).join('. '), 422, 'VALIDATION_ERROR');
+const handleJWTError         = ()  => new AppError('Invalid token — please log in again', 401, 'INVALID_TOKEN');
+const handleJWTExpiredError  = ()  => new AppError('Session expired — please log in again', 401, 'TOKEN_EXPIRED');
 
-const handleJWTError = () =>
-  new AppError('Invalid token. Please log in again.', 401);
-
-const handleJWTExpiredError = () =>
-  new AppError('Your session has expired. Please log in again.', 401);
-
-const sendDevError = (err, res) => {
-  res.status(err.statusCode).json({
-    status: err.status,
-    message: err.message,
-    errors: err.errors || undefined,
-    stack: err.stack,
-  });
-};
+// ══════════════════════════════════════════════════════════════
+// RESPONSE SERIALISERS
+// ══════════════════════════════════════════════════════════════
+const sendDevError = (err, res) => res.status(err.statusCode).json({
+  status:  err.status,
+  code:    err.code,
+  message: err.message,
+  stack:   err.stack,
+});
 
 const sendProdError = (err, res) => {
   if (err.isOperational) {
-    res.status(err.statusCode).json({
-      status: err.status,
+    return res.status(err.statusCode).json({
+      status:  err.status,
+      code:    err.code,
       message: err.message,
-      errors: err.errors || undefined,
-    });
-  } else {
-    logger.error('UNHANDLED ERROR:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Something went wrong. Please try again later.',
     });
   }
+  logger.error(`💥 UNHANDLED: ${err.message}\n${err.stack}`);
+  res.status(500).json({ status: 'error', code: 'INTERNAL_ERROR', message: 'Something went wrong.' });
 };
 
-const errorHandler = (err, req, res, next) => {
+// ══════════════════════════════════════════════════════════════
+// GLOBAL HANDLER
+// ══════════════════════════════════════════════════════════════
+const errorHandler = (err, req, res, _next) => {
   err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
+  err.status     = err.status     || 'error';
 
-  logger.error(`${err.statusCode} - ${err.message} - ${req.originalUrl} - ${req.ip}`);
+  logger.error(`[${req.method}] ${req.originalUrl} → ${err.statusCode}: ${err.message}`);
 
-  if (config.isDev) {
-    return sendDevError(err, res);
-  }
+  let e = Object.assign(Object.create(Object.getPrototypeOf(err)), err);
+  e.message = err.message;
 
-  let error = Object.assign(new AppError(err.message, err.statusCode), err);
+  if (e.name  === 'CastError')         e = handleCastError(e);
+  if (e.code  === 11000)               e = handleDuplicateKey(e);
+  if (e.name  === 'ValidationError')   e = handleValidationError(e);
+  if (e.name  === 'JsonWebTokenError') e = handleJWTError();
+  if (e.name  === 'TokenExpiredError') e = handleJWTExpiredError();
 
-  if (err.name === 'CastError') error = handleCastError(err);
-  if (err.code === 11000) error = handleDuplicateKeyError(err);
-  if (err.name === 'ValidationError') error = handleValidationError(err);
-  if (err.name === 'JsonWebTokenError') error = handleJWTError();
-  if (err.name === 'TokenExpiredError') error = handleJWTExpiredError();
+  return process.env.NODE_ENV === 'development' ? sendDevError(e, res) : sendProdError(e, res);
+};
 
-  sendProdError(error, res);
+// 404 catcher — mount BEFORE errorHandler
+const notFound = (req, _res, next) => {
+  next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404, 'NOT_FOUND'));
 };
 
 module.exports = errorHandler;
+module.exports.AppError = AppError;
+module.exports.notFound = notFound;
