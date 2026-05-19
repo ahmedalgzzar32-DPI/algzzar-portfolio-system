@@ -1,147 +1,151 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const Admin = require('../models/Admin');
-const { createError } = require('../utils/errorHandler');
-const { sendTokenCookie, clearTokenCookie } = require('../utils/tokenUtils');
+const crypto = require('crypto');
+const User = require('../models/User');
+const config = require('../config/config');
+const { asyncHandler, AppError, sendSuccess } = require('../utils/helpers');
+const logger = require('../utils/logger');
 
-// @desc    Register admin (first-time setup only)
-// @route   POST /api/auth/register
-// @access  Public (but protected by SETUP_KEY env var)
-exports.register = async (req, res, next) => {
-  try {
-    const { name, email, password, setupKey } = req.body;
+// ── Token helpers ────────────────────────────────────────────
 
-    if (setupKey !== process.env.ADMIN_SETUP_KEY) {
-      return next(createError(403, 'Invalid setup key'));
-    }
+const signAccessToken = (id) =>
+  jwt.sign({ id }, config.jwt.secret, { expiresIn: config.jwt.accessExpiry });
 
-    const existingAdmin = await Admin.findOne({ email });
-    if (existingAdmin) {
-      return next(createError(409, 'Admin already registered'));
-    }
+const signRefreshToken = (id) =>
+  jwt.sign({ id }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiry });
 
-    const admin = await Admin.create({ name, email, password });
-    sendTokenCookie(res, admin._id);
-
-    res.status(201).json({
-      success: true,
-      message: 'Admin registered successfully',
-      data: { id: admin._id, name: admin.name, email: admin.email },
-    });
-  } catch (err) {
-    next(err);
-  }
+const cookieOptions = {
+  httpOnly: true,
+  secure: config.isProd,
+  sameSite: config.isProd ? 'strict' : 'lax',
+  path: '/',
 };
 
-// @desc    Login admin
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return next(createError(400, 'Please provide email and password'));
-    }
-
-    const admin = await Admin.findOne({ email }).select('+password');
-    if (!admin) {
-      return next(createError(401, 'Invalid credentials'));
-    }
-
-    const isMatch = await admin.comparePassword(password);
-    if (!isMatch) {
-      return next(createError(401, 'Invalid credentials'));
-    }
-
-    // Update last login
-    admin.lastLogin = Date.now();
-    await admin.save({ validateBeforeSave: false });
-
-    sendTokenCookie(res, admin._id);
-
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        avatar: admin.avatar,
-        lastLogin: admin.lastLogin,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
+const setTokenCookies = (res, accessToken, refreshToken) => {
+  res.cookie('accessToken', accessToken, {
+    ...cookieOptions,
+    maxAge: 15 * 60 * 1000, // 15 min
+  });
+  res.cookie('refreshToken', refreshToken, {
+    ...cookieOptions,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
 };
 
-// @desc    Logout admin
-// @route   POST /api/auth/logout
-// @access  Private
-exports.logout = async (req, res, next) => {
-  try {
-    clearTokenCookie(res);
-    res.status(200).json({ success: true, message: 'Logged out successfully' });
-  } catch (err) {
-    next(err);
+// ── Controllers ──────────────────────────────────────────────
+
+exports.login = asyncHandler(async (req, res, next) => {
+  const { email, password } = req.body;
+
+  const user = await User.findOne({ email }).select('+password');
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return next(new AppError('Invalid email or password', 401));
   }
-};
 
-// @desc    Get current admin profile
-// @route   GET /api/auth/me
-// @access  Private
-exports.getMe = async (req, res, next) => {
-  try {
-    const admin = await Admin.findById(req.admin.id);
-    res.status(200).json({ success: true, data: admin });
-  } catch (err) {
-    next(err);
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
+
+  // Store hashed refresh token
+  const hashedRefresh = crypto.createHash('sha256').update(refreshToken).digest('hex');
+  user.refreshTokens = user.refreshTokens || [];
+  user.refreshTokens.push({ token: hashedRefresh, createdAt: new Date() });
+  // Keep only last 5 sessions
+  if (user.refreshTokens.length > 5) {
+    user.refreshTokens = user.refreshTokens.slice(-5);
   }
-};
+  user.lastLogin = new Date();
+  await user.save({ validateBeforeSave: false });
 
-// @desc    Update admin profile
-// @route   PUT /api/auth/me
-// @access  Private
-exports.updateMe = async (req, res, next) => {
-  try {
-    const { name, email, currentPassword, newPassword } = req.body;
-    const admin = await Admin.findById(req.admin.id).select('+password');
+  setTokenCookies(res, accessToken, refreshToken);
 
-    if (newPassword) {
-      if (!currentPassword) {
-        return next(createError(400, 'Please provide your current password'));
-      }
-      const isMatch = await admin.comparePassword(currentPassword);
-      if (!isMatch) {
-        return next(createError(401, 'Current password is incorrect'));
-      }
-      admin.password = newPassword;
-    }
+  logger.info(`Admin login: ${user.email}`);
 
-    if (name) admin.name = name;
-    if (email) admin.email = email;
+  sendSuccess(res, {
+    accessToken,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+    },
+  }, 'Login successful');
+});
 
-    await admin.save();
+exports.refreshToken = asyncHandler(async (req, res, next) => {
+  const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: { id: admin._id, name: admin.name, email: admin.email },
-    });
-  } catch (err) {
-    next(err);
+  if (!token) {
+    return next(new AppError('Refresh token required', 401));
   }
-};
 
-// @desc    Refresh JWT token
-// @route   GET /api/auth/refresh
-// @access  Private
-exports.refreshToken = async (req, res, next) => {
+  let decoded;
   try {
-    sendTokenCookie(res, req.admin.id);
-    res.status(200).json({ success: true, message: 'Token refreshed' });
-  } catch (err) {
-    next(err);
+    decoded = jwt.verify(token, config.jwt.refreshSecret);
+  } catch {
+    return next(new AppError('Invalid or expired refresh token', 401));
   }
-};
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const user = await User.findOne({
+    _id: decoded.id,
+    'refreshTokens.token': hashedToken,
+  });
+
+  if (!user) {
+    return next(new AppError('Refresh token revoked or not found', 401));
+  }
+
+  const newAccessToken = signAccessToken(user._id);
+  const newRefreshToken = signRefreshToken(user._id);
+
+  // Rotate: remove old, add new
+  const newHashedRefresh = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+  user.refreshTokens = user.refreshTokens.filter((t) => t.token !== hashedToken);
+  user.refreshTokens.push({ token: newHashedRefresh, createdAt: new Date() });
+  await user.save({ validateBeforeSave: false });
+
+  setTokenCookies(res, newAccessToken, newRefreshToken);
+
+  sendSuccess(res, { accessToken: newAccessToken }, 'Token refreshed');
+});
+
+exports.logout = asyncHandler(async (req, res, next) => {
+  const token = req.cookies?.refreshToken || req.body?.refreshToken;
+
+  if (token) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    req.user.refreshTokens = (req.user.refreshTokens || []).filter(
+      (t) => t.token !== hashedToken
+    );
+    await req.user.save({ validateBeforeSave: false });
+  }
+
+  res.clearCookie('accessToken');
+  res.clearCookie('refreshToken');
+
+  sendSuccess(res, {}, 'Logged out successfully');
+});
+
+exports.getMe = asyncHandler(async (req, res) => {
+  sendSuccess(res, { user: req.user });
+});
+
+exports.changePassword = asyncHandler(async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await bcrypt.compare(currentPassword, user.password))) {
+    return next(new AppError('Current password is incorrect', 400));
+  }
+
+  user.password = await bcrypt.hash(newPassword, 12);
+  user.passwordChangedAt = new Date();
+  user.refreshTokens = []; // Invalidate all sessions
+  await user.save({ validateBeforeSave: false });
+
+  res.clearCookie('accessToken');
+  res.clearCookie('refreshToken');
+
+  sendSuccess(res, {}, 'Password changed. Please log in again.');
+});

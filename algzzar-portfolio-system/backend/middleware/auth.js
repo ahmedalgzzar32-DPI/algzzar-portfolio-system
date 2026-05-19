@@ -1,64 +1,83 @@
 const jwt = require('jsonwebtoken');
-const Admin = require('../models/Admin');
-const { createError } = require('../utils/errorHandler');
+const config = require('../config/config');
+const { AppError, asyncHandler } = require('../utils/helpers');
+// Import your User model — adjust path to match existing model
+const User = require('../models/User');
 
-// ─── PROTECT MIDDLEWARE ────────────────────────────────────────────────────────
-const protect = async (req, res, next) => {
+/**
+ * Verifies the access token from Authorization header or cookie.
+ * Attaches req.user on success.
+ */
+const protect = asyncHandler(async (req, res, next) => {
+  let token;
+
+  // 1. Check Authorization header
+  if (req.headers.authorization?.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+  // 2. Fallback: httpOnly cookie
+  else if (req.cookies?.accessToken) {
+    token = req.cookies.accessToken;
+  }
+
+  if (!token) {
+    return next(new AppError('Authentication required. Please log in.', 401));
+  }
+
+  let decoded;
   try {
-    let token;
-
-    // 1. Try cookie first
-    if (req.cookies?.adminToken) {
-      token = req.cookies.adminToken;
-    }
-    // 2. Fall back to Authorization header
-    else if (req.headers.authorization?.startsWith('Bearer ')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return next(createError(401, 'Access denied. No token provided.'));
-    }
-
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Check admin still exists
-    const admin = await Admin.findById(decoded.id).select('-password');
-    if (!admin) {
-      return next(createError(401, 'Admin account no longer exists'));
-    }
-
-    // Attach admin to request
-    req.admin = admin;
-    next();
+    decoded = jwt.verify(token, config.jwt.secret);
   } catch (err) {
-    if (err.name === 'JsonWebTokenError') {
-      return next(createError(401, 'Invalid token'));
-    }
     if (err.name === 'TokenExpiredError') {
-      return next(createError(401, 'Token expired. Please log in again.'));
+      return next(new AppError('Session expired. Please refresh your token.', 401));
     }
-    next(err);
+    return next(new AppError('Invalid token. Please log in again.', 401));
   }
+
+  const user = await User.findById(decoded.id).select('-password -refreshTokens');
+  if (!user) {
+    return next(new AppError('User no longer exists.', 401));
+  }
+
+  if (user.passwordChangedAfter && user.passwordChangedAfter(decoded.iat)) {
+    return next(new AppError('Password recently changed. Please log in again.', 401));
+  }
+
+  req.user = user;
+  next();
+});
+
+/**
+ * Restricts access to admin role only.
+ * Must be used AFTER protect middleware.
+ */
+const adminOnly = (req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    return next(new AppError('Access denied. Admin privileges required.', 403));
+  }
+  next();
 };
 
-// ─── OPTIONAL AUTH (for public routes that benefit from knowing the admin) ────
-const optionalAuth = async (req, res, next) => {
-  try {
-    const token = req.cookies?.adminToken || 
-      (req.headers.authorization?.startsWith('Bearer ') ? 
-        req.headers.authorization.split(' ')[1] : null);
-
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.admin = await Admin.findById(decoded.id).select('-password');
-    }
-    next();
-  } catch (_) {
-    // Silently continue without auth
-    next();
+/**
+ * Optionally attach user if token present, but don't block if missing.
+ */
+const optionalAuth = asyncHandler(async (req, res, next) => {
+  let token;
+  if (req.headers.authorization?.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies?.accessToken) {
+    token = req.cookies.accessToken;
   }
-};
 
-module.exports = { protect, optionalAuth };
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, config.jwt.secret);
+      req.user = await User.findById(decoded.id).select('-password -refreshTokens');
+    } catch {
+      // Silent — just don't attach user
+    }
+  }
+  next();
+});
+
+module.exports = { protect, adminOnly, optionalAuth };
