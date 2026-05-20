@@ -1,5 +1,5 @@
 const Contact = require('../models/Contact');
-const { createError } = require('../utils/errorHandler');
+const { AppError } = require('../utils/helpers');
 const nodemailer = require('nodemailer');
 
 // ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ exports.submitContact = async (req, res, next) => {
     const { name, email, subject, message, phone } = req.body;
 
     if (!name || !email || !message) {
-      return next(createError(400, 'Name, email, and message are required'));
+      return next(new AppError('Name, email, and message are required', 400));
     }
 
     // Rate limit: max 3 messages per email per 24h
@@ -36,7 +36,7 @@ exports.submitContact = async (req, res, next) => {
     });
 
     if (recentCount >= 3) {
-      return next(createError(429, 'Too many messages. Please try again tomorrow.'));
+      return next(new AppError('Too many messages. Please try again tomorrow.', 429));
     }
 
     // Save to DB
@@ -131,7 +131,7 @@ exports.getContact = async (req, res, next) => {
       { new: true }
     );
 
-    if (!contact) return next(createError(404, 'Message not found'));
+    if (!contact) return next(new AppError('Message not found', 404));
 
     res.status(200).json({ success: true, data: contact });
   } catch (err) {
@@ -145,7 +145,7 @@ exports.getContact = async (req, res, next) => {
 exports.deleteContact = async (req, res, next) => {
   try {
     const contact = await Contact.findByIdAndDelete(req.params.id);
-    if (!contact) return next(createError(404, 'Message not found'));
+    if (!contact) return next(new AppError('Message not found', 404));
 
     res.status(200).json({ success: true, message: 'Message deleted' });
   } catch (err) {
@@ -164,7 +164,7 @@ exports.markRead = async (req, res, next) => {
       { read: !!read, readAt: read ? new Date() : null },
       { new: true }
     );
-    if (!contact) return next(createError(404, 'Message not found'));
+    if (!contact) return next(new AppError('Message not found', 404));
     res.status(200).json({ success: true, data: { read: contact.read } });
   } catch (err) {
     next(err);

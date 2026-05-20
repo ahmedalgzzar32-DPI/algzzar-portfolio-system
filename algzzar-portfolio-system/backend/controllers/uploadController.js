@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { createError } = require('../utils/errorHandler');
+const { AppError } = require('../utils/helpers');
 
 // @desc    Upload single image
 // @route   POST /api/admin/upload/image
@@ -8,7 +8,7 @@ const { createError } = require('../utils/errorHandler');
 exports.uploadImage = async (req, res, next) => {
   try {
     if (!req.file) {
-      return next(createError(400, 'No image file provided'));
+      return next(new AppError('No image file provided', 400));
     }
 
     const fileUrl = `/uploads/${req.file.filename}`;
@@ -35,7 +35,7 @@ exports.uploadImage = async (req, res, next) => {
 exports.uploadImages = async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) {
-      return next(createError(400, 'No image files provided'));
+      return next(new AppError('No image files provided', 400));
     }
 
     const files = req.files.map((file) => ({
@@ -62,7 +62,7 @@ exports.uploadImages = async (req, res, next) => {
 exports.uploadDocument = async (req, res, next) => {
   try {
     if (!req.file) {
-      return next(createError(400, 'No document file provided'));
+      return next(new AppError('No document file provided', 400));
     }
 
     const fileUrl = `/uploads/${req.file.filename}`;
@@ -91,13 +91,13 @@ exports.deleteUpload = async (req, res, next) => {
 
     // Prevent directory traversal
     if (filename.includes('..') || filename.includes('/')) {
-      return next(createError(400, 'Invalid filename'));
+      return next(new AppError('Invalid filename', 400));
     }
 
     const filePath = path.join(process.cwd(), 'uploads', filename);
 
     if (!fs.existsSync(filePath)) {
-      return next(createError(404, 'File not found'));
+      return next(new AppError('File not found', 404));
     }
 
     fs.unlinkSync(filePath);

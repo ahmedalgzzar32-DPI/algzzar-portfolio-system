@@ -1,5 +1,5 @@
 const Profile = require('../models/Profile');
-const { createError } = require('../utils/errorHandler');
+const { AppError } = require('../utils/helpers');
 const { deleteFile } = require('../utils/fileUtils');
 
 // @desc    Get public profile
@@ -10,7 +10,7 @@ exports.getProfile = async (req, res, next) => {
     let profile = await Profile.findOne().select('-__v');
 
     if (!profile) {
-      return next(createError(404, 'Profile not found'));
+      return next(new AppError('Profile not found', 404));
     }
 
     res.status(200).json({ success: true, data: profile });
@@ -84,7 +84,7 @@ exports.upsertProfile = async (req, res, next) => {
 exports.uploadResume = async (req, res, next) => {
   try {
     if (!req.file) {
-      return next(createError(400, 'No file uploaded'));
+      return next(new AppError('No file uploaded', 400));
     }
 
     const existing = await Profile.findOne();

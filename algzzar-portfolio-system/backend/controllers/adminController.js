@@ -20,7 +20,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     totalSkills,
   ] = await Promise.all([
     Project.countDocuments(),
-    Project.countDocuments({ isVisible: true }),
+    Project.countDocuments({ isPublished: true }),
     Message.countDocuments(),
     Message.countDocuments({ isRead: false }),
     Skill.countDocuments(),
@@ -31,10 +31,10 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     .limit(5)
     .select('name email subject isRead createdAt');
 
-  const topProjects = await Project.find({ isVisible: true })
+  const topProjects = await Project.find({ isPublished: true })
     .sort({ views: -1 })
     .limit(5)
-    .select('title slug views thumbnailImage');
+    .select('title slug views coverImage');
 
   sendSuccess(res, {
     stats: {
@@ -81,7 +81,7 @@ exports.createProject = asyncHandler(async (req, res) => {
   // Handle uploaded images
   if (req.files?.length) {
     data.images = req.files.map((f) => `/uploads/projects/${f.filename}`);
-    data.thumbnailImage = data.images[0];
+    data.coverImage = { url: data.images[0] };
   }
 
   // Auto-generate slug
@@ -108,7 +108,7 @@ exports.updateProject = asyncHandler(async (req, res, next) => {
     // Delete old images
     project.images?.forEach((img) => deleteFile(img)); // CRITICAL FIX: pass stored URL path directly
     data.images = req.files.map((f) => `/uploads/projects/${f.filename}`);
-    data.thumbnailImage = data.images[0];
+    data.coverImage = { url: data.images[0] };
   }
 
   if (data.title) {
@@ -140,9 +140,9 @@ exports.deleteProject = asyncHandler(async (req, res, next) => {
 exports.toggleProjectVisibility = asyncHandler(async (req, res, next) => {
   const project = await Project.findById(req.params.id);
   if (!project) return next(new AppError('Project not found', 404));
-  project.isVisible = !project.isVisible;
+  project.isPublished = !project.isPublished;
   await project.save();
-  sendSuccess(res, { isVisible: project.isVisible });
+  sendSuccess(res, { isPublished: project.isPublished });
 });
 
 exports.toggleFeatured = asyncHandler(async (req, res, next) => {

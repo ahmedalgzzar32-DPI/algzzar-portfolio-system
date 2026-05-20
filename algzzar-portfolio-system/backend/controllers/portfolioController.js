@@ -9,7 +9,7 @@ const { asyncHandler, sendSuccess, AppError } = require('../utils/helpers');
 exports.getProjects = asyncHandler(async (req, res) => {
   const { category, featured, page = 1, limit = 12 } = req.query;
 
-  const filter = { isVisible: true };
+  const filter = { isPublished: true };
   if (category && category !== 'all') filter.category = category;
   if (featured === 'true') filter.isFeatured = true;
 
@@ -25,7 +25,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
   ]);
 
   // Unique categories for filter tabs
-  const categories = await Project.distinct('category', { isVisible: true });
+  const categories = await Project.distinct('category', { isPublished: true });
 
   sendSuccess(res, {
     projects,
@@ -43,7 +43,7 @@ exports.getProjects = asyncHandler(async (req, res) => {
 exports.getProjectBySlug = asyncHandler(async (req, res, next) => {
   const project = await Project.findOne({
     slug: req.params.slug,
-    isVisible: true,
+    isPublished: true,
   });
 
   if (!project) {
@@ -55,12 +55,12 @@ exports.getProjectBySlug = asyncHandler(async (req, res, next) => {
 
   // Get adjacent projects for prev/next navigation
   const [prev, next_] = await Promise.all([
-    Project.findOne({ isVisible: true, order: { $lt: project.order } })
+    Project.findOne({ isPublished: true, order: { $lt: project.order } })
       .sort({ order: -1 })
-      .select('title slug thumbnailImage'),
-    Project.findOne({ isVisible: true, order: { $gt: project.order } })
+      .select('title slug coverImage'),
+    Project.findOne({ isPublished: true, order: { $gt: project.order } })
       .sort({ order: 1 })
-      .select('title slug thumbnailImage'),
+      .select('title slug coverImage'),
   ]);
 
   sendSuccess(res, { project, prev, next: next_ });
@@ -75,7 +75,7 @@ exports.getAbout = asyncHandler(async (req, res, next) => {
 
 // GET /api/portfolio/skills
 exports.getSkills = asyncHandler(async (req, res) => {
-  const skills = await Skill.find({ isVisible: true }).sort({ category: 1, order: 1 });
+  const skills = await Skill.find({ isActive: true }).sort({ category: 1, order: 1 });
 
   // Group by category
   const grouped = skills.reduce((acc, skill) => {
@@ -96,8 +96,8 @@ exports.getExperience = asyncHandler(async (req, res) => {
 // GET /api/portfolio/stats
 exports.getStats = asyncHandler(async (req, res) => {
   const [projectCount, skillCount, experienceYears] = await Promise.all([
-    Project.countDocuments({ isVisible: true }),
-    Skill.countDocuments({ isVisible: true }),
+    Project.countDocuments({ isPublished: true }),
+    Skill.countDocuments({ isActive: true }),
     Experience.aggregate([
       { $match: { isVisible: true } },
       {
@@ -133,8 +133,8 @@ exports.submitContact = asyncHandler(async (req, res) => {
     name,
     email,
     subject: subject || 'Portfolio Contact',
-    message,
-    ip: req.ip,
+    body: message,
+    ipAddress: req.ip,
     userAgent: req.get('User-Agent'),
   });
 

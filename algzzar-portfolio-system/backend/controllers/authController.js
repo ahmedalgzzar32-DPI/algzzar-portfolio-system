@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const config = require('../config/config');
 const { asyncHandler, AppError, sendSuccess } = require('../utils/helpers');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 // ── Token helpers ────────────────────────────────────────────
 

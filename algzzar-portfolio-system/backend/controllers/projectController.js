@@ -1,5 +1,5 @@
 const Project = require('../models/Project');
-const { createError } = require('../utils/errorHandler');
+const { AppError } = require('../utils/helpers');
 const { deleteFile } = require('../utils/fileUtils');
 
 // @desc    Get all projects (public - only published)
@@ -48,7 +48,7 @@ exports.getProjectBySlug = async (req, res, next) => {
     });
 
     if (!project) {
-      return next(createError(404, 'Project not found'));
+      return next(new AppError('Project not found', 404));
     }
 
     // Increment views
@@ -111,7 +111,7 @@ exports.adminGetProjects = async (req, res, next) => {
 exports.adminGetProject = async (req, res, next) => {
   try {
     const project = await Project.findById(req.params.id);
-    if (!project) return next(createError(404, 'Project not found'));
+    if (!project) return next(new AppError('Project not found', 404));
     res.status(200).json({ success: true, data: project });
   } catch (err) {
     next(err);
@@ -157,7 +157,7 @@ exports.createProject = async (req, res, next) => {
 exports.updateProject = async (req, res, next) => {
   try {
     const project = await Project.findById(req.params.id);
-    if (!project) return next(createError(404, 'Project not found'));
+    if (!project) return next(new AppError('Project not found', 404));
 
     const updates = { ...req.body };
 
@@ -198,7 +198,7 @@ exports.updateProject = async (req, res, next) => {
 exports.deleteProject = async (req, res, next) => {
   try {
     const project = await Project.findById(req.params.id);
-    if (!project) return next(createError(404, 'Project not found'));
+    if (!project) return next(new AppError('Project not found', 404));
 
     // Cleanup files
     if (project.thumbnail && project.thumbnail.startsWith('/uploads/')) {
@@ -224,7 +224,7 @@ exports.deleteProject = async (req, res, next) => {
 exports.toggleFeatured = async (req, res, next) => {
   try {
     const project = await Project.findById(req.params.id);
-    if (!project) return next(createError(404, 'Project not found'));
+    if (!project) return next(new AppError('Project not found', 404));
 
     project.featured = !project.featured;
     await project.save();
@@ -246,7 +246,7 @@ exports.updateStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
     if (!['published', 'draft', 'archived'].includes(status)) {
-      return next(createError(400, 'Invalid status value'));
+      return next(new AppError('Invalid status value', 400));
     }
 
     const project = await Project.findByIdAndUpdate(
@@ -254,7 +254,7 @@ exports.updateStatus = async (req, res, next) => {
       { status },
       { new: true }
     );
-    if (!project) return next(createError(404, 'Project not found'));
+    if (!project) return next(new AppError('Project not found', 404));
 
     res.status(200).json({
       success: true,

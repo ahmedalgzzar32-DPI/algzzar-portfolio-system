@@ -42,13 +42,13 @@
   // ── Live backend (Codespace URL – hardcoded as current live backend) ──
   // This is the currently running backend from the brief:
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    // Try to detect if running in codespace context via referrer/port
-    window.ALGZZAR_API_URL = 'https://automatic-journey-x5qqvg699x5q3pv75-5000.app.github.dev/api';
+    
+    window.ALGZZAR_API_URL = 'http://localhost:5000/api';
     window.ALGZZAR_ENV = 'development';
     return;
   }
 
   // ── Fallback ───────────────────────────────────────────────────
-  window.ALGZZAR_API_URL = 'https://automatic-journey-x5qqvg699x5q3pv75-5000.app.github.dev/api';
+  window.ALGZZAR_API_URL = 'http://localhost:5000/api';
   window.ALGZZAR_ENV = 'fallback';
 })();
