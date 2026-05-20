@@ -37,8 +37,10 @@ const Auth = {
   },
   isLoggedIn: () => !!Auth.getAccessToken(),
   redirectToLogin: () => {
-    const isAdmin = window.location.pathname.includes('dashboard');
-    if (isAdmin) window.location.href = 'admin-login.html';
+    // IMPORTANT FIX: resolve login page relative to current page's directory
+    // so this works regardless of deployment sub-path.
+    const currentDir = window.location.pathname.replace(/\/[^\/]*$/, '/');
+    window.location.href = currentDir + 'admin-login.html';
   },
 };
 
@@ -353,6 +355,7 @@ const AlgzzarAPI = { AuthAPI, PortfolioAPI, AdminAPI, Auth, health };
 // Global fallback for non-module scripts
 if (typeof window !== 'undefined') window.AlgzzarAPI = AlgzzarAPI;
 
-// ES module exports
-export { AuthAPI, PortfolioAPI, AdminAPI, Auth, health };
-export default AlgzzarAPI;
+// NOTE: ES module export statements are intentionally omitted.
+// This file is loaded as a plain <script> tag (not type="module").
+// Adding export/import statements causes a SyntaxError in that context.
+// All public API is available via window.AlgzzarAPI (set above).

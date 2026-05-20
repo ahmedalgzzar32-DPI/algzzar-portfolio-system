@@ -3,7 +3,11 @@ const router = express.Router();
 const { body, param } = require('express-validator');
 const adminController = require('../controllers/adminController');
 const { protect, adminOnly } = require('../middleware/auth');
-const { uploadProjectImages, uploadAvatar, uploadResume } = require('../utils/upload');
+const {
+  uploadProjectImages,
+  uploadAvatar,
+  uploadAboutFields,   // CRITICAL FIX: single .fields() instance for /about
+} = require('../utils/upload');
 const validate = require('../middleware/validate');
 
 // All admin routes require auth
@@ -38,12 +42,8 @@ router.patch('/projects/:id/featured', adminController.toggleFeatured);
 
 // ── About / Profile ──────────────────────────────────────────
 router.get('/about', adminController.getAbout);
-router.put(
-  '/about',
-  uploadAvatar.single('avatar'),
-  uploadResume.single('resume'),
-  adminController.updateAbout
-);
+// CRITICAL FIX: single .fields() instance — two chained multer instances consume the stream twice
+router.put('/about', uploadAboutFields, adminController.updateAbout);
 
 // ── Skills ───────────────────────────────────────────────────
 router.get('/skills', adminController.getSkills);

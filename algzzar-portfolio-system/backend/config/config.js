@@ -28,9 +28,15 @@ module.exports = {
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',')
-      : ['http://localhost:3000', 'http://localhost:5173'],
+    // IMPORTANT FIX: normalize origin into an array safely.
+    // process.env values are always strings so .split() is safe here,
+    // but we also trim whitespace from each entry and filter empty strings
+    // to handle values like 'http://a.com, http://b.com' (space after comma).
+    origin: (() => {
+      const raw = process.env.CORS_ORIGIN;
+      if (!raw) return ['http://localhost:3000', 'http://localhost:5173'];
+      return raw.split(',').map((o) => o.trim()).filter(Boolean);
+    })(),
   },
 
   upload: {

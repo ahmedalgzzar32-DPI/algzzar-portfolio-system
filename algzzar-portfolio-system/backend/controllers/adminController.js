@@ -106,7 +106,7 @@ exports.updateProject = asyncHandler(async (req, res, next) => {
 
   if (req.files?.length) {
     // Delete old images
-    project.images?.forEach((img) => deleteFile(path.join('public', img)));
+    project.images?.forEach((img) => deleteFile(img)); // CRITICAL FIX: pass stored URL path directly
     data.images = req.files.map((f) => `/uploads/projects/${f.filename}`);
     data.thumbnailImage = data.images[0];
   }
@@ -132,7 +132,7 @@ exports.updateProject = asyncHandler(async (req, res, next) => {
 exports.deleteProject = asyncHandler(async (req, res, next) => {
   const project = await Project.findById(req.params.id);
   if (!project) return next(new AppError('Project not found', 404));
-  project.images?.forEach((img) => deleteFile(path.join('public', img)));
+  project.images?.forEach((img) => deleteFile(img)); // CRITICAL FIX: pass stored URL path directly
   await project.deleteOne();
   sendSuccess(res, {}, 'Project deleted');
 });
