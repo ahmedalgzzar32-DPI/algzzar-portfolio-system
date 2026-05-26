@@ -3,18 +3,36 @@
   "version": "1.0.0",
   "description": "Luxury Cinematic Portfolio System — Full Stack",
   "main": "backend/server.js",
+  "type": "module",
   "scripts": {
     "build": "cd backend && npm install",
+    "build:cf": "npm install && cd backend && npm install",
     "start": "cd backend && npm start",
     "dev": "cd backend && npm run dev",
-    "test": "cd backend && npm test"
+    "dev:cf": "wrangler dev",
+    "deploy:cf": "wrangler publish",
+    "test": "cd backend && npm test",
+    "cf:login": "wrangler login",
+    "cf:init": "wrangler init --name algzzar-portfolio-system"
+  },
+  "dependencies": {
+    "itty-router": "^4.0.0",
+    "wrangler": "^3.39.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0"
   },
   "keywords": [
     "portfolio",
     "cms",
     "backend",
-    "frontend"
+    "frontend",
+    "cloudflare",
+    "workers"
   ],
   "author": "Ahmed Algzzar",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

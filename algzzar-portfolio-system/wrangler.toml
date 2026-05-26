@@ -1,0 +1,57 @@
+name = "algzzar-portfolio-system"
+main = "backend/server.js"
+compatibility_date = "2024-01-01"
+account_id = "your_account_id"
+workers_dev = true
+
+# Environment variables
+[env.production]
+vars = { ENVIRONMENT = "production", NODE_ENV = "production" }
+
+[env.development]
+vars = { ENVIRONMENT = "development", NODE_ENV = "development" }
+
+# Bindings for Cloudflare KV (for caching, sessions, etc.)
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "your_kv_namespace_id"
+preview_id = "your_kv_preview_id"
+
+# Environment-specific KV bindings
+[[env.production.kv_namespaces]]
+binding = "KV_STORE"
+id = "your_production_kv_id"
+
+[[env.development.kv_namespaces]]
+binding = "KV_STORE"
+id = "your_development_kv_id"
+
+# D1 Database (optional - for production MongoDB)
+[[d1_databases]]
+binding = "DB"
+database_name = "algzzar_portfolio"
+database_id = "your_d1_database_id"
+
+# Cloudflare Pages configuration (if using Pages + Functions)
+[pages]
+build_output_dir = "backend"
+build_command = "cd backend && npm install && npm run build"
+
+# Routes
+[routes]
+pattern = "/*"
+custom_domain = "api.yourdomain.com"
+
+# Triggers (Cron jobs if needed)
+# [[triggers.crons]]
+# cron = "0 0 * * *"
+
+# Settings
+[build]
+command = "cd backend && npm install"
+cwd = "."
+watch_paths = ["backend/**/*.js"]
+
+# Observability
+[observability]
+enabled = true

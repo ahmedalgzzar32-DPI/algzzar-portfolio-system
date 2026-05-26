@@ -1,0 +1,24 @@
+{
+  "build": {
+    "command": "npm run build:cf",
+    "cwd": "/",
+    "root_dir": ""
+  },
+  "env": {
+    "production": {
+      "NODE_ENV": "production",
+      "ENVIRONMENT": "production"
+    },
+    "preview": {
+      "NODE_ENV": "development",
+      "ENVIRONMENT": "preview"
+    }
+  },
+  "observability": {
+    "enabled": true
+  },
+  "fail_open": true,
+  "functions": {
+    "directory": "functions"
+  }
+}

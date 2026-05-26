@@ -1,0 +1,14 @@
+[build]
+  command = "cd backend && npm install"
+  base = "."
+  publish = "backend/"
+
+[[redirects]]
+  from = "/*"
+  to = "/backend/server.js"
+  status = 200
+
+[env]
+  [env.production]
+    [env.production.context.db]
+      environment = { MONGODB_URI = "$MONGODB_URI", NODE_ENV = "production" }
