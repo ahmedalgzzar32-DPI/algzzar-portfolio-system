@@ -1,49 +1,70 @@
+# ============================================
+# Cloudflare Pages Configuration
+# ============================================
 name = "algzzar-portfolio-system"
-main = "backend/server.js"
-compatibility_date = "2024-01-01"
+type = "javascript"
 account_id = "your_account_id"
+project_name = "algzzar-portfolio-system"
 
-# ============== CLOUDFLARE PAGES CONFIGURATION ==============
+# ============== BUILD CONFIGURATION ==============
 [build]
 command = "npm run build:cf"
 cwd = "."
 root_dir = "."
-watch_paths = ["backend/**/*.js", "package.json"]
+watch_paths = ["backend/**/*.js", "package.json", "frontend/**"]
 
+# ============== PRODUCTION ENVIRONMENT ==============
 [env.production]
-name = "algzzar-portfolio-system-prod"
-routes = [
-  { pattern = "yourdomain.com/*", zone_name = "yourdomain.com" }
-]
+name = "algzzar-portfolio-system-production"
 
+[[env.production.routes]]
+pattern = "yourdomain.com/*"
+zone_name = "yourdomain.com"
+custom_domain = true
+
+# ============== PREVIEW ENVIRONMENT ==============
+[env.preview]
+name = "algzzar-portfolio-system-preview"
+
+[[env.preview.routes]]
+pattern = "preview.yourdomain.com/*"
+zone_name = "yourdomain.com"
+
+# ============== DEVELOPMENT ENVIRONMENT ==============
 [env.development]
-name = "algzzar-portfolio-system-dev"
-routes = [
-  { pattern = "preview.yourdomain.com/*", zone_name = "yourdomain.com" }
-]
+name = "algzzar-portfolio-system-development"
 
-# ============== ENVIRONMENT VARIABLES ==============
-# ملاحظة: أضف هذه المتغيرات في Cloudflare Pages Dashboard
-# - MONGODB_URI
-# - JWT_SECRET
-# - CLOUDINARY_CLOUD_NAME
-# - CLOUDINARY_API_KEY
-# - CLOUDINARY_API_SECRET
-# - NODE_ENV=production
-# - BACKEND_URL
+# ============== FUNCTIONS CONFIGURATION ==============
+[functions]
+directory = "backend"
+node_compat = true
 
-# ============== KV NAMESPACES (Optional) ==============
+# ============== KV NAMESPACES (Optional - for caching/sessions) ==============
 # [[kv_namespaces]]
 # binding = "KV_STORE"
 # id = "your_kv_namespace_id"
 # preview_id = "your_kv_preview_id"
+
+# [[env.production.kv_namespaces]]
+# binding = "KV_STORE"
+# id = "your_production_kv_id"
+
+# [[env.preview.kv_namespaces]]
+# binding = "KV_STORE"
+# id = "your_preview_kv_id"
 
 # ============== D1 DATABASE (Optional) ==============
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "algzzar_portfolio"
 # database_id = "your_d1_database_id"
+# preview_id = "your_d1_preview_id"
 
 # ============== OBSERVABILITY ==============
 [observability]
 enabled = true
+
+# ============== LIMITS ==============
+[limits]
+cpu_seconds = 30
+timeout_seconds = 30
