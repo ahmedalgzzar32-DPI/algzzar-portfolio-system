@@ -1,0 +1,20 @@
+{
+  "name": "algzzar-portfolio-system",
+  "version": "1.0.0",
+  "description": "Luxury Cinematic Portfolio System — Full Stack",
+  "main": "backend/server.js",
+  "scripts": {
+    "build": "cd backend && npm install",
+    "start": "cd backend && npm start",
+    "dev": "cd backend && npm run dev",
+    "test": "cd backend && npm test"
+  },
+  "keywords": [
+    "portfolio",
+    "cms",
+    "backend",
+    "frontend"
+  ],
+  "author": "Ahmed Algzzar",
+  "license": "MIT"
+}
