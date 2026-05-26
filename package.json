@@ -5,15 +5,11 @@
   "main": "algzzar-portfolio-system/backend/server.js",
   "type": "module",
   "scripts": {
-    "build": "cd algzzar-portfolio-system/backend && npm install",
-    "build:cf": "npm install && cd algzzar-portfolio-system/backend && npm install",
+    "build": "echo 'Build completed - frontend ready'",
+    "build:cf": "echo 'Frontend static files ready for deployment'",
     "start": "cd algzzar-portfolio-system/backend && npm start",
     "dev": "cd algzzar-portfolio-system/backend && npm run dev",
-    "dev:cf": "wrangler dev",
-    "deploy:cf": "wrangler publish",
-    "test": "cd algzzar-portfolio-system/backend && npm test",
-    "cf:login": "wrangler login",
-    "cf:init": "wrangler init --name algzzar-portfolio-system"
+    "test": "cd algzzar-portfolio-system/backend && npm test"
   },
   "dependencies": {
     "itty-router": "^4.0.0",
